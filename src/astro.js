@@ -248,20 +248,33 @@ function resolveEquatorial(point, date, observer) {
   return point.body ? equatorialOf(point.body, date, observer) : { ra: point.ra, dec: point.dec };
 }
 
-export function computeDirection(promissor, significator, natalDate, observer, radius = 1) {
+// opts.selfReturn: a planet directed to its OWN natal position (promissor
+// and significator are the same body, cast in plain conjunction) — the
+// forward arc is genuinely 0deg (already there), but the meaningful
+// question here is "when does primary motion bring it all the way back
+// around", i.e. one full primary rotation, 360deg (~365 years via Naibod —
+// not coincidentally close to a calendar year, since Naibod's key IS the
+// sun's mean motion). Without this flag a same-body direction just
+// reports an instant (0-year) arc, which isn't a useful answer.
+export function computeDirection(promissor, significator, natalDate, observer, radius = 1, opts = {}) {
   const pEq = resolveEquatorial(promissor, natalDate, observer);
   const sEq = resolveEquatorial(significator, natalDate, observer);
   const pRAdeg = pEq.ra * 15;
   const sRAdeg = sEq.ra * 15;
 
   const forward = forwardArcDeg(pRAdeg, sRAdeg);
-  const swapped = forward > 180;
+  const isSelfReturn = opts.selfReturn && forward === 0;
+
+  // Self-return: no meaningful "swap" (promissor and significator are the
+  // same point) — always the promissor completing one full primary
+  // rotation back to itself.
+  const swapped = !isSelfReturn && forward > 180;
   const moving = swapped ? significator : promissor;
   const fixed = swapped ? promissor : significator;
   const movingEq = swapped ? sEq : pEq;
   const movingRA0 = movingEq.ra * 15;
   const movingDec = movingEq.dec;
-  const arcDeg = swapped ? forwardArcDeg(sRAdeg, pRAdeg) : forward;
+  const arcDeg = isSelfReturn ? 360 : (swapped ? forwardArcDeg(sRAdeg, pRAdeg) : forward);
   const arcYears = arcDeg / NAIBOD_DEG_PER_YEAR;
 
   function directedXYZ(tYears) {

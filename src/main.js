@@ -74,7 +74,7 @@ function updateLegend(layers, significatorKey, promissorKey) {
     path: significatorIsBody,
     positionCircle: !!significatorKey,
     aspectPlane: layers.aspectPlane && significatorIsBody,
-    direction: !!(significatorKey && promissorKey && significatorKey !== promissorKey),
+    direction: !!(significatorKey && promissorKey),
   };
   legendRows.forEach(row => { row.hidden = !visible[row.dataset.layer]; });
 }
@@ -208,7 +208,7 @@ function rebuild() {
   direction = null;
   directionMarker = null;
   directionYears = 0;
-  if (significatorKey && promissorKey && significatorKey !== promissorKey) {
+  if (significatorKey && promissorKey) {
     let promissorPoint = resolveDirectionPoint(promissorKey, state);
 
     // A non-conjunction aspect is cast IN THE PROMISSOR'S ASPECT PLANE, not
@@ -226,6 +226,7 @@ function rebuild() {
       promissorPoint,
       resolveDirectionPoint(significatorKey, state),
       date, state.observer, SPHERE_RADIUS,
+      { selfReturn: promissorKey === significatorKey },
     );
     const { group, markerMesh, markerMaterial, label } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);
     skyGroup.add(group);
