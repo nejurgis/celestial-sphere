@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { makeTextSprite } from './labels.js';
+import { formatEclipticDegree } from './astro.js';
 
 const RADIUS = 5;
 
@@ -52,18 +53,18 @@ function buildRibbon(innerPts, outerPts, color, opacity = 0.5) {
   return new THREE.Mesh(geom, mat);
 }
 
-export function buildZodiacBand(segments, { band = true, text = true } = {}) {
+// band controls the ribbon AND its glyph together (glyph is meaningless
+// without the band it sits on); names is the sign-name text, independent.
+export function buildZodiacBand(segments, { band = true, names = true } = {}) {
   const group = new THREE.Group();
   for (const seg of segments) {
+    const [x, y, z] = seg.midXYZ;
+    const len = Math.hypot(x, y, z) || 1;
+    const dir = [x / len, y / len, z / len];
+
     if (band) {
       const color = ELEMENT_COLORS[seg.element];
       group.add(buildRibbon(seg.inner, seg.outer, color, 0.5));
-    }
-
-    if (text) {
-      const [x, y, z] = seg.midXYZ;
-      const len = Math.hypot(x, y, z) || 1;
-      const dir = [x / len, y / len, z / len];
 
       // ︎ (text-presentation variation selector) stops canvas fillText from
       // falling back to Apple Color Emoji for these codepoints — the same
@@ -72,7 +73,9 @@ export function buildZodiacBand(segments, { band = true, text = true } = {}) {
       const glyph = makeTextSprite(`${seg.glyph}︎`, { color: '#2a2a2a', size: 64, weight: '700', scale: 0.55 });
       glyph.position.set(dir[0] * (RADIUS * 1.01), dir[1] * (RADIUS * 1.01), dir[2] * (RADIUS * 1.01));
       group.add(glyph);
+    }
 
+    if (names) {
       const nameLabel = makeTextSprite(seg.name, { color: '#3a3a3a', size: 24, weight: '600', scale: 0.16 });
       nameLabel.position.set(dir[0] * (RADIUS * 1.16), dir[1] * (RADIUS * 1.16) - 0.15, dir[2] * (RADIUS * 1.16));
       group.add(nameLabel);
@@ -159,7 +162,7 @@ function buildPoleAxis(poleXYZ) {
   return group;
 }
 
-function buildPlanets(planets) {
+function buildPlanets(planets, showDegrees) {
   const group = new THREE.Group();
   const geom = new THREE.SphereGeometry(0.09, 16, 16);
   const mat = new THREE.MeshBasicMaterial({ color: PLANET_COLOR });
@@ -170,7 +173,8 @@ function buildPlanets(planets) {
     marker.position.set(x, y, z);
     group.add(marker);
 
-    const label = makeTextSprite(p.key, { color: '#b02a2a', size: 34, weight: '700', scale: 0.24 });
+    const text = showDegrees ? `${p.key} ${formatEclipticDegree(p.elon)}` : p.key;
+    const label = makeTextSprite(text, { color: '#b02a2a', size: 34, weight: '700', scale: 0.24 });
     const len = Math.hypot(x, y, z) || 1;
     label.position.set((x / len) * 1.12 * len, (y / len) * 1.12 * len + 0.22, (z / len) * 1.12 * len);
     group.add(label);
@@ -178,7 +182,7 @@ function buildPlanets(planets) {
   return group;
 }
 
-function buildAngleMarker(point, label, color, hexColor) {
+function buildAngleMarker(point, label, color, hexColor, showDegrees) {
   const group = new THREE.Group();
   const geom = new THREE.SphereGeometry(0.08, 16, 16);
   const mat = new THREE.MeshBasicMaterial({ color });
@@ -186,7 +190,8 @@ function buildAngleMarker(point, label, color, hexColor) {
   marker.position.set(...point.xyz);
   group.add(marker);
 
-  const text = makeTextSprite(label, { color: hexColor, size: 32, weight: '700', scale: 0.22 });
+  const labelText = showDegrees ? `${label} ${formatEclipticDegree(point.deg)}` : label;
+  const text = makeTextSprite(labelText, { color: hexColor, size: 32, weight: '700', scale: 0.22 });
   text.position.set(point.xyz[0] * 1.1, point.xyz[1] * 1.1 + 0.2, point.xyz[2] * 1.1);
   group.add(text);
   return group;
@@ -256,24 +261,26 @@ export function buildDirectionGroup(direction, movingLabel, fixedLabel) {
 
 export const DIRECTION_COLORS = { active: DIRECTION_COLOR, hit: DIRECTION_HIT_COLOR };
 
+// sphere/horizon/pole are always drawn — not user-toggleable, they're the
+// basic frame everything else is read against.
 export const DEFAULT_LAYERS = {
-  sphere: true, horizon: true, equator: true, ecliptic: true, pole: true,
-  planets: true, zodiacBand: true, zodiacText: true, angles: true,
+  equator: true, ecliptic: true, planets: true,
+  zodiacBand: true, zodiacNames: true, angles: true, degrees: false,
 };
 
 export function buildSkyGroup(state, layers = DEFAULT_LAYERS) {
   const group = new THREE.Group();
-  if (layers.sphere) group.add(buildSphere());
-  if (layers.horizon) group.add(buildHorizonDisc());
+  group.add(buildSphere());
+  group.add(buildHorizonDisc());
+  group.add(buildPoleAxis(state.poleXYZ));
   if (layers.equator) group.add(buildGreatCircle(state.equatorPoints, EQUATOR_COLOR, { labelColor: '#2f6fb0' }));
   if (layers.ecliptic) group.add(buildGreatCircle(state.eclipticPoints, ECLIPTIC_COLOR, { labelColor: '#2f9e44' }));
-  if (layers.pole) group.add(buildPoleAxis(state.poleXYZ));
-  if (layers.planets) group.add(buildPlanets(state.planets));
+  if (layers.planets) group.add(buildPlanets(state.planets, layers.degrees));
   if (layers.angles) {
-    group.add(buildAngleMarker(state.mc, 'MC', MERIDIAN_AXIS_COLOR, '#a8790f'));
-    group.add(buildAngleMarker(state.ic, 'IC', MERIDIAN_AXIS_COLOR, '#a8790f'));
-    if (state.asc) group.add(buildAngleMarker(state.asc, 'ASC', HORIZON_AXIS_COLOR, '#0e8a94'));
-    if (state.dsc) group.add(buildAngleMarker(state.dsc, 'DSC', HORIZON_AXIS_COLOR, '#0e8a94'));
+    group.add(buildAngleMarker(state.mc, 'MC', MERIDIAN_AXIS_COLOR, '#a8790f', layers.degrees));
+    group.add(buildAngleMarker(state.ic, 'IC', MERIDIAN_AXIS_COLOR, '#a8790f', layers.degrees));
+    if (state.asc) group.add(buildAngleMarker(state.asc, 'ASC', HORIZON_AXIS_COLOR, '#0e8a94', layers.degrees));
+    if (state.dsc) group.add(buildAngleMarker(state.dsc, 'DSC', HORIZON_AXIS_COLOR, '#0e8a94', layers.degrees));
   }
   return group;
 }

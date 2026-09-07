@@ -41,7 +41,7 @@
         position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
         background: rgba(255,255,255,0.94); border: 1px solid #e0e0e0; border-radius: 12px;
         padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); backdrop-filter: blur(6px);
-        display: flex; flex-direction: column; gap: 8px; min-width: 420px;
+        display: flex; flex-direction: column; gap: 8px; min-width: 470px;
       }
       #direction-panel .row1 { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: #555; }
       #direction-panel select { font: inherit; padding: 4px 6px; border: 1px solid #ddd; border-radius: 6px; }
@@ -54,7 +54,7 @@
       #direction-panel .transport button.play { background: #e08a1e; color: #fff; width: 44px; }
       #direction-panel .transport button.play:hover { background: #c8770f; }
       #direction-panel input[type=range] { flex: 1; }
-      #direction-panel #direction-readout { font-size: 0.78rem; color: #333; white-space: nowrap; min-width: 150px; text-align: right; }
+      #direction-panel #direction-readout { font-size: 0.78rem; color: #333; white-space: nowrap; min-width: 210px; text-align: right; }
       #direction-panel.hit #direction-readout { color: #22c55e; font-weight: 700; }
 
       #layers-panel {
@@ -104,15 +104,13 @@
 
       <div id="layers-panel">
         <h2>Layers</h2>
-        <label><input type="checkbox" id="layer-sphere" checked> Sky sphere</label>
-        <label><input type="checkbox" id="layer-horizon" checked> Horizon</label>
         <label><input type="checkbox" id="layer-equator" checked> Celestial equator</label>
         <label><input type="checkbox" id="layer-ecliptic" checked> Ecliptic line</label>
-        <label><input type="checkbox" id="layer-pole" checked> Pole axis</label>
         <label><input type="checkbox" id="layer-planets" checked> Planets</label>
-        <label><input type="checkbox" id="layer-zodiacBand" checked> Zodiac band</label>
-        <label><input type="checkbox" id="layer-zodiacText" checked> Zodiac glyphs/text</label>
+        <label><input type="checkbox" id="layer-zodiacBand" checked> Zodiac band + glyphs</label>
+        <label><input type="checkbox" id="layer-zodiacNames" checked> Zodiac names</label>
         <label><input type="checkbox" id="layer-angles" checked> Angles (MC/IC/ASC/DSC)</label>
+        <label><input type="checkbox" id="layer-degrees"> Show degrees</label>
       </div>
 
       <div id="legend">
@@ -124,7 +122,7 @@
         <div><span class="dot" style="background:#d23b3b"></span>Planets</div>
         <div><span class="dot" style="background:#a8321e"></span>Planet's real path (loop)</div>
         <div><span class="dot" style="background:#8b5cf6"></span>Position circle + mundane position</div>
-        <div><span class="dot" style="background:#e08a1e"></span>Primary direction (promissor → significator)</div>
+        <div><span class="dot" style="background:#e08a1e"></span>Directional arc (promissor → significator)</div>
         <div>Drag to rotate · scroll to zoom</div>
       </div>
 

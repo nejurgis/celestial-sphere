@@ -69,8 +69,8 @@ function updateReadout() {
   const hit = directionYears >= direction.arcYears;
   directionPanel.classList.toggle('hit', hit);
   readout.textContent = hit
-    ? `Reached — ${direction.arcYears.toFixed(1)} yrs${direction.swapped ? ' (converse)' : ''}`
-    : `${directionYears.toFixed(1)} / ${direction.arcYears.toFixed(1)} yrs${direction.swapped ? ' (converse)' : ''}`;
+    ? `Directional arc reached — ${direction.arcYears.toFixed(1)} yrs${direction.swapped ? ' (converse)' : ''}`
+    : `Directional arc: ${directionYears.toFixed(1)} / ${direction.arcYears.toFixed(1)} yrs${direction.swapped ? ' (converse)' : ''}`;
 }
 
 function setDirectionYears(t) {
@@ -111,9 +111,9 @@ function rebuild() {
   const state = computeSkyState(date, latitude, longitude, SPHERE_RADIUS);
   skyGroup = buildSkyGroup(state, layers);
 
-  if (layers.zodiacBand || layers.zodiacText) {
+  if (layers.zodiacBand || layers.zodiacNames) {
     const zodiacBand = computeZodiacBand(date, state.observer, SPHERE_RADIUS);
-    skyGroup.add(buildZodiacBand(zodiacBand, { band: layers.zodiacBand, text: layers.zodiacText }));
+    skyGroup.add(buildZodiacBand(zodiacBand, { band: layers.zodiacBand, names: layers.zodiacNames }));
   }
 
   const significatorKey = pathSelect.value;
@@ -182,7 +182,7 @@ const lonInput = document.getElementById('lon-input');
 const nowBtn = document.getElementById('now-btn');
 const pathSelect = document.getElementById('path-select');
 
-const LAYER_IDS = ['sphere', 'horizon', 'equator', 'ecliptic', 'pole', 'planets', 'zodiacBand', 'zodiacText', 'angles'];
+const LAYER_IDS = ['equator', 'ecliptic', 'planets', 'zodiacBand', 'zodiacNames', 'angles', 'degrees'];
 const layerCheckboxes = Object.fromEntries(LAYER_IDS.map(id => [id, document.getElementById(`layer-${id}`)]));
 
 function readLayerCheckboxes() {

@@ -34,6 +34,15 @@ export const ZODIAC_SIGNS = [
   { name: 'Pisces', glyph: '♓', element: 'water' },
 ];
 
+// "14° Ari" style — the point's position expressed as degree-within-sign,
+// same convention most chart displays use rather than raw 0-360 longitude.
+export function formatEclipticDegree(elonDeg) {
+  const norm = ((elonDeg % 360) + 360) % 360;
+  const signIndex = Math.floor(norm / 30);
+  const degInSign = Math.floor(norm % 30);
+  return `${degInSign}°${ZODIAC_SIGNS[signIndex].name.slice(0, 3)}`;
+}
+
 // How many days of real motion (centered on "now") to sample when tracing a
 // planet's path — wide enough to capture one full retrograde loop. Roughly
 // matched to each body's synodic period. Sun/Moon excluded (no loop / loop
