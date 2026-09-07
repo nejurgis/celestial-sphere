@@ -96,11 +96,15 @@ function rebuild() {
     });
   }
 
-  const state = computeSkyState(date, latitude, longitude, SPHERE_RADIUS);
-  skyGroup = buildSkyGroup(state);
+  const layers = readLayerCheckboxes();
 
-  const zodiacBand = computeZodiacBand(date, state.observer, SPHERE_RADIUS);
-  skyGroup.add(buildZodiacBand(zodiacBand));
+  const state = computeSkyState(date, latitude, longitude, SPHERE_RADIUS);
+  skyGroup = buildSkyGroup(state, layers);
+
+  if (layers.zodiacBand || layers.zodiacText) {
+    const zodiacBand = computeZodiacBand(date, state.observer, SPHERE_RADIUS);
+    skyGroup.add(buildZodiacBand(zodiacBand, { band: layers.zodiacBand, text: layers.zodiacText }));
+  }
 
   const significatorKey = pathSelect.value;
   if (significatorKey) {
@@ -160,6 +164,13 @@ const lonInput = document.getElementById('lon-input');
 const nowBtn = document.getElementById('now-btn');
 const pathSelect = document.getElementById('path-select');
 
+const LAYER_IDS = ['sphere', 'horizon', 'equator', 'ecliptic', 'pole', 'planets', 'zodiacBand', 'zodiacText', 'angles'];
+const layerCheckboxes = Object.fromEntries(LAYER_IDS.map(id => [id, document.getElementById(`layer-${id}`)]));
+
+function readLayerCheckboxes() {
+  return Object.fromEntries(LAYER_IDS.map(id => [id, layerCheckboxes[id].checked]));
+}
+
 function toLocalDatetimeValue(date) {
   const pad = n => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -173,7 +184,7 @@ nowBtn.addEventListener('click', () => {
   dateInput.value = toLocalDatetimeValue(new Date());
   rebuild();
 });
-[dateInput, latInput, lonInput, pathSelect].forEach(el => el.addEventListener('change', rebuild));
+[dateInput, latInput, lonInput, pathSelect, ...Object.values(layerCheckboxes)].forEach(el => el.addEventListener('change', rebuild));
 
 // ── Direction transport panel ────────────────────────────────────────────
 

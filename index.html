@@ -56,6 +56,16 @@
       #direction-panel input[type=range] { flex: 1; }
       #direction-panel #direction-readout { font-size: 0.78rem; color: #333; white-space: nowrap; min-width: 150px; text-align: right; }
       #direction-panel.hit #direction-readout { color: #22c55e; font-weight: 700; }
+
+      #layers-panel {
+        position: absolute; top: 16px; right: 16px; z-index: 10;
+        background: rgba(255,255,255,0.92); border: 1px solid #e0e0e0; border-radius: 10px;
+        padding: 12px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); backdrop-filter: blur(6px);
+        display: flex; flex-direction: column; gap: 5px; min-width: 170px;
+      }
+      #layers-panel h2 { font-size: 0.8rem; margin: 0 0 4px; color: #666; text-transform: uppercase; letter-spacing: 0.03em; }
+      #layers-panel label { display: flex; align-items: center; gap: 7px; font-size: 0.82rem; cursor: pointer; }
+      #layers-panel input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; }
     </style>
   </head>
   <body>
@@ -86,6 +96,19 @@
           </select>
         </label>
         <button id="now-btn" type="button">Now</button>
+      </div>
+
+      <div id="layers-panel">
+        <h2>Layers</h2>
+        <label><input type="checkbox" id="layer-sphere" checked> Sky sphere</label>
+        <label><input type="checkbox" id="layer-horizon" checked> Horizon</label>
+        <label><input type="checkbox" id="layer-equator" checked> Celestial equator</label>
+        <label><input type="checkbox" id="layer-ecliptic" checked> Ecliptic line</label>
+        <label><input type="checkbox" id="layer-pole" checked> Pole axis</label>
+        <label><input type="checkbox" id="layer-planets" checked> Planets</label>
+        <label><input type="checkbox" id="layer-zodiacBand" checked> Zodiac band</label>
+        <label><input type="checkbox" id="layer-zodiacText" checked> Zodiac glyphs/text</label>
+        <label><input type="checkbox" id="layer-angles" checked> Angles (MC/IC/ASC/DSC)</label>
       </div>
 
       <div id="legend">
