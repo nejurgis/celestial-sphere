@@ -65,6 +65,10 @@
         box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
         width: min(760px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
       }
+      /* #table-panel's own `display: flex` above (specificity 1-0-0) otherwise
+         beats the browser's default `[hidden]{display:none}` (0-1-0), so the
+         hidden attribute silently did nothing — this restores it. */
+      #table-panel[hidden] { display: none; }
       .table-panel-header {
         display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #e5e5e5;
       }
@@ -76,14 +80,25 @@
       #table-panel table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
       #table-panel th { position: sticky; top: 0; background: #fff; text-align: left; padding: 8px 6px; border-bottom: 2px solid #ddd; color: #666; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
       #table-panel th .help {
-        display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
-        border-radius: 50%; background: #d8dde3; color: #666; font-size: 0.65rem; font-weight: 700;
-        text-transform: none; letter-spacing: 0; cursor: help; margin-left: 2px; vertical-align: middle;
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 13px; height: 13px; border-radius: 50%; background: #d8dde3; color: #666;
+        font-size: 0.65rem; font-weight: 700; text-transform: none; letter-spacing: 0;
+        cursor: help; margin-left: 2px; vertical-align: middle;
       }
       #table-panel th .help:hover { background: #2f6fb0; color: #fff; }
+      #table-panel th .help::after {
+        content: attr(data-tip); position: absolute; top: 130%; left: 50%; transform: translateX(-50%);
+        width: 240px; max-width: 60vw; background: #222; color: #fff; padding: 8px 10px; border-radius: 8px;
+        font-size: 0.72rem; font-weight: 400; text-transform: none; letter-spacing: normal; line-height: 1.4;
+        white-space: normal; box-shadow: 0 4px 16px rgba(0,0,0,0.25); z-index: 999;
+        opacity: 0; pointer-events: none; transition: opacity 0.1s;
+      }
+      #table-panel th .help:hover::after { opacity: 1; }
       #table-panel td { padding: 6px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
       #table-panel tr.type-c td:nth-child(5) { color: #a8321e; }
       #table-panel tr.type-d td:nth-child(5) { color: #2f6fb0; }
+      #table-panel tr.nature-easy td { background: rgba(34, 197, 94, 0.12); }
+      #table-panel tr.nature-hard td { background: rgba(220, 38, 38, 0.12); }
       #table-panel tr:hover td { background: #f7f9fc; }
 
       #layers-panel {
@@ -95,6 +110,11 @@
       #layers-panel h2 { font-size: 0.8rem; margin: 0 0 4px; color: #666; text-transform: uppercase; letter-spacing: 0.03em; }
       #layers-panel label { display: flex; align-items: center; gap: 7px; font-size: 0.82rem; cursor: pointer; }
       #layers-panel input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; }
+      #layers-panel button {
+        margin-top: 6px; padding-top: 8px; border: none; border-top: 1px solid #e5e5e5; border-radius: 0;
+        background: transparent; color: #2f6fb0; font-weight: 600; font-size: 0.82rem; cursor: pointer; text-align: left;
+      }
+      #layers-panel button:hover { color: #1d4d80; }
     </style>
   </head>
   <body>
@@ -114,20 +134,6 @@
             <input id="lon-input" type="number" step="0.01" min="-180" max="180">
           </label>
         </div>
-        <label>Focus planet (path + position circle)
-          <select id="path-select">
-            <option value="">None</option>
-            <option value="Mercury">Mercury</option>
-            <option value="Venus" selected>Venus</option>
-            <option value="Mars">Mars</option>
-            <option value="Jupiter">Jupiter</option>
-            <option value="Saturn">Saturn</option>
-            <option value="ASC">Ascendant</option>
-            <option value="DSC">Descendant</option>
-            <option value="MC">Midheaven</option>
-            <option value="IC">Imum Coeli</option>
-          </select>
-        </label>
         <button id="now-btn" type="button">Now</button>
       </div>
 
@@ -141,6 +147,7 @@
         <label><input type="checkbox" id="layer-angles" checked> Angles (MC/IC/ASC/DSC)</label>
         <label><input type="checkbox" id="layer-degrees"> Show degrees</label>
         <label><input type="checkbox" id="layer-aspectPlane" checked> Aspect plane (Morinus)</label>
+        <button id="table-toggle-btn" type="button" title="List every direction (all promissors, all significators, all aspects) chronologically">☰ Directions table</button>
       </div>
 
       <div id="legend">
@@ -183,7 +190,19 @@
             <option value="1" selected>sinister</option>
             <option value="-1">dexter</option>
           </select>
-          <span>to significator's position circle (focus planet above)</span>
+          <span>to</span>
+          <select id="significator-select">
+            <option value="">— none —</option>
+            <option value="Mercury">Mercury</option>
+            <option value="Venus" selected>Venus</option>
+            <option value="Mars">Mars</option>
+            <option value="Jupiter">Jupiter</option>
+            <option value="Saturn">Saturn</option>
+            <option value="ASC">Ascendant</option>
+            <option value="DSC">Descendant</option>
+            <option value="MC">Midheaven</option>
+            <option value="IC">Imum Coeli</option>
+          </select>
         </div>
         <div class="transport">
           <button id="dir-reset" type="button" title="Reset to birth">⏮</button>
@@ -199,13 +218,13 @@
           </select>
           <input id="dir-slider" type="range" min="0" max="1" step="0.01" value="0">
           <span id="direction-readout">—</span>
-          <button id="table-toggle-btn" type="button" class="ghost-btn" title="List every direction (all promissors, all significators, all aspects) chronologically">☰ Table</button>
         </div>
       </div>
 
       <div id="table-panel" hidden>
         <div class="table-panel-header">
           <h2>Directions — chronological</h2>
+          <label>Min age <input id="table-min-years" type="number" value="0" min="0" max="1000" step="10"> yrs</label>
           <label>Max age <input id="table-max-years" type="number" value="150" min="1" max="1000" step="10"> yrs</label>
           <button id="table-recompute-btn" type="button">Recompute</button>
           <span id="table-status" class="muted"></span>
@@ -215,13 +234,13 @@
           <table>
             <thead>
               <tr>
-                <th>Sgnf. <span class="help" title="Significator — the planet or angle whose natal imprint receives the influence. The topic being activated (which life area depends on what that planet/angle represents in the chart).">?</span></th>
-                <th>Promissor <span class="help" title="The moving point whose primary motion carries it toward the significator's fixed position circle — the trigger. A symbol after the name (e.g. □) means an aspect is cast in that planet's Morinus aspect plane, not a plain conjunction.">?</span></th>
-                <th>Position <span class="help" title="The promissor's actual zodiac degree at birth — where the aspect (if any) is measured from.">?</span></th>
-                <th>Arc <span class="help" title="The angular distance, in degrees of Right Ascension, the promissor travels via primary motion to complete this direction.">?</span></th>
-                <th>Type <span class="help" title="D = Direct: promissor moves toward the significator's fixed position. C = Converse: roles swapped because the direct arc would exceed 180 degrees (~180 years). Converse is not weaker or lesser — per the source material, it 'produces future events to the same extent' as Direct. Purely a computational choice to keep the arc under one lifetime.">?</span></th>
-                <th>Age <span class="help" title="Age in years at which this direction becomes exact, via the Naibod key: 1 degree of arc is approximately 1 year (the sun's mean daily motion, 0.9856 degrees).">?</span></th>
-                <th>Date <span class="help" title="Calendar date this direction becomes exact, computed from your birth date plus the age above.">?</span></th>
+                <th>Sgnf. <span class="help" data-tip="Significator — the planet or angle whose natal imprint receives the influence. The topic being activated (which life area depends on what that planet/angle represents in the chart).">?</span></th>
+                <th>Promissor <span class="help" data-tip="The moving point whose primary motion carries it toward the significator's fixed position circle — the trigger. A symbol after the name (e.g. □) means an aspect is cast in that planet's Morinus aspect plane, not a plain conjunction.">?</span></th>
+                <th>Position <span class="help" data-tip="The promissor's actual zodiac degree at birth — where the aspect (if any) is measured from.">?</span></th>
+                <th>Arc <span class="help" data-tip="The angular distance, in degrees of Right Ascension, the promissor travels via primary motion to complete this direction.">?</span></th>
+                <th>Type <span class="help" data-tip="D = Direct: promissor moves toward the significator's fixed position. C = Converse: roles swapped because the direct arc would exceed 180 degrees (~180 years). Converse is not weaker or lesser — it produces future events to the same extent as Direct. Purely a computational choice to keep the arc under one lifetime.">?</span></th>
+                <th>Age <span class="help" data-tip="Age in years at which this direction becomes exact, via the Naibod key: 1 degree of arc is approximately 1 year (the sun's mean daily motion, 0.9856 degrees).">?</span></th>
+                <th>Date <span class="help" data-tip="Calendar date this direction becomes exact, computed from your birth date plus the age above.">?</span></th>
               </tr>
             </thead>
             <tbody id="table-body"></tbody>

@@ -204,7 +204,7 @@ function rebuild() {
     rotatables.zodiacSegments = zb.segments;
   }
 
-  const significatorKey = pathSelect.value;
+  const significatorKey = significatorSelect.value;
   if (significatorKey) {
     // Real motion path only makes sense for an actual orbiting body — angles
     // (ASC/DSC/MC/IC) aren't astronomy-engine bodies and have no loop of
@@ -289,7 +289,7 @@ const dateInput = document.getElementById('date-input');
 const latInput = document.getElementById('lat-input');
 const lonInput = document.getElementById('lon-input');
 const nowBtn = document.getElementById('now-btn');
-const pathSelect = document.getElementById('path-select');
+const significatorSelect = document.getElementById('significator-select');
 
 const LAYER_IDS = ['equator', 'ecliptic', 'planets', 'zodiacBand', 'zodiacNames', 'angles', 'degrees', 'aspectPlane'];
 const layerCheckboxes = Object.fromEntries(LAYER_IDS.map(id => [id, document.getElementById(`layer-${id}`)]));
@@ -311,7 +311,7 @@ nowBtn.addEventListener('click', () => {
   dateInput.value = toLocalDatetimeValue(new Date());
   rebuild();
 });
-[dateInput, latInput, lonInput, pathSelect, ...Object.values(layerCheckboxes)].forEach(el => el.addEventListener('change', rebuild));
+[dateInput, latInput, lonInput, significatorSelect, ...Object.values(layerCheckboxes)].forEach(el => el.addEventListener('change', rebuild));
 
 // ── Direction transport panel ────────────────────────────────────────────
 
@@ -355,6 +355,7 @@ const pointLabel = key => PLANET_GLYPHS[key] ?? key;
 
 const tableToggleBtn = document.getElementById('table-toggle-btn');
 const tablePanel = document.getElementById('table-panel');
+const tableMinYears = document.getElementById('table-min-years');
 const tableMaxYears = document.getElementById('table-max-years');
 const tableRecomputeBtn = document.getElementById('table-recompute-btn');
 const tableCloseBtn = document.getElementById('table-close-btn');
@@ -364,20 +365,29 @@ const tableBody = document.getElementById('table-body');
 function computeTable() {
   if (!natalObserver) return;
   tableStatus.textContent = 'Computing…';
+  const minYears = parseFloat(tableMinYears.value) || 0;
   const maxYears = parseFloat(tableMaxYears.value) || 150;
   const resolvePoint = key => resolveDirectionPoint(key, lastState);
   const bodyOf = key => BODY_BY_KEY[key];
 
   const t0 = performance.now();
-  const rows = computeAllDirections(TABLE_POINT_KEYS, resolvePoint, bodyOf, natalDate, natalObserver, SPHERE_RADIUS, maxYears);
+  const rows = computeAllDirections(TABLE_POINT_KEYS, resolvePoint, bodyOf, natalDate, natalObserver, SPHERE_RADIUS, maxYears)
+    .filter(r => r.arcYears >= minYears);
   const ms = (performance.now() - t0).toFixed(0);
+
+  // Harmonious (sextile/trine) vs hard (square/opposition) aspects — a
+  // general astrological convention, not part of Morinus's own system
+  // (which doesn't rate directions by nature). Conjunction is left neutral:
+  // its nature depends on which planets are involved, not knowable generically.
+  const NATURE = { '⚹': 'nature-easy', '△': 'nature-easy', '□': 'nature-hard', '☍': 'nature-hard' };
 
   tableBody.innerHTML = rows.map(r => {
     const promissorLabel = pointLabel(r.promissorKey) + (r.aspectGlyph !== '☌' ? r.aspectGlyph : '') + (r.aspectDir ? (r.aspectDir === 'dexter' ? ' (dex)' : '') : '');
     const position = r.promissorElon != null ? formatEclipticDegree(r.promissorElon) : '—';
     const type = r.swapped ? 'C' : 'D';
     const dateStr = r.date.toISOString().slice(0, 10);
-    return `<tr class="type-${type.toLowerCase()}">
+    const natureClass = NATURE[r.aspectGlyph] ?? '';
+    return `<tr class="type-${type.toLowerCase()} ${natureClass}">
       <td>${pointLabel(r.significatorKey)}</td>
       <td>${promissorLabel}</td>
       <td>${position}</td>
@@ -398,6 +408,7 @@ tableToggleBtn.addEventListener('click', () => {
 tableCloseBtn.addEventListener('click', () => { tablePanel.hidden = true; });
 tableRecomputeBtn.addEventListener('click', computeTable);
 tableMaxYears.addEventListener('change', computeTable);
+tableMinYears.addEventListener('change', computeTable);
 
 resize();
 rebuild();
