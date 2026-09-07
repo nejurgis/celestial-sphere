@@ -309,13 +309,14 @@ export function computeZodiacBand(date, observer, radius = 1, halfWidthDeg = 4, 
       const eqInner = eclipticPointToEquatorial(elon, -halfWidthDeg, date);
       const hOuter = horizonOf(date, observer, eqOuter.ra, eqOuter.dec);
       const hInner = horizonOf(date, observer, eqInner.ra, eqInner.dec);
-      outer.push(altAzToXYZ(hOuter.altitude, hOuter.azimuth, radius));
-      inner.push(altAzToXYZ(hInner.altitude, hInner.azimuth, radius));
+      outer.push({ ra: eqOuter.ra, dec: eqOuter.dec, xyz: altAzToXYZ(hOuter.altitude, hOuter.azimuth, radius) });
+      inner.push({ ra: eqInner.ra, dec: eqInner.dec, xyz: altAzToXYZ(hInner.altitude, hInner.azimuth, radius) });
     }
     const midEq = eclipticPointToEquatorial(s * 30 + 15, 0, date);
     const midH = horizonOf(date, observer, midEq.ra, midEq.dec);
     return {
       ...sign, index: s, inner, outer,
+      midRa: midEq.ra, midDec: midEq.dec,
       midXYZ: altAzToXYZ(midH.altitude, midH.azimuth, radius),
     };
   });

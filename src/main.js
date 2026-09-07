@@ -41,7 +41,7 @@ controls.maxDistance = SPHERE_RADIUS * 6;
 scene.add(new THREE.AmbientLight(0xffffff, 1));
 
 let skyGroup = null;
-let rotatables = { planetMarkers: [], eclipticLine: null, eclipticLabels: [], eclipticPoints: [] };
+let rotatables = { planetMarkers: [], eclipticLine: null, eclipticLabels: [], eclipticPoints: [], zodiacSegments: [] };
 let natalDate = null;
 let natalObserver = null;
 
@@ -128,6 +128,28 @@ function reprojectRotatables(rotationDeg) {
     const len = Math.hypot(x, y, z) || 1;
     l.sprite.position.set((x / len) * (SPHERE_RADIUS * 1.03), (y / len) * (SPHERE_RADIUS * 1.03), (z / len) * (SPHERE_RADIUS * 1.03));
   }
+
+  // Zodiac band moves WITH the planets (it's ecliptic content, same as
+  // them) — otherwise planets visibly detach from their own zodiac band
+  // as soon as any direction is played, which reads as broken.
+  for (const seg of rotatables.zodiacSegments ?? []) {
+    if (seg.ribbonMesh) {
+      const posAttr = seg.ribbonMesh.geometry.attributes.position;
+      const n = seg.innerPts.length;
+      for (let i = 0; i < n; i++) {
+        const [ix, iy, iz] = reposition(seg.innerPts[i].ra, seg.innerPts[i].dec);
+        const [ox, oy, oz] = reposition(seg.outerPts[i].ra, seg.outerPts[i].dec);
+        posAttr.setXYZ(i * 2, ix, iy, iz);
+        posAttr.setXYZ(i * 2 + 1, ox, oy, oz);
+      }
+      posAttr.needsUpdate = true;
+    }
+    const [mx, my, mz] = reposition(seg.midRa, seg.midDec);
+    const mlen = Math.hypot(mx, my, mz) || 1;
+    const dir = [mx / mlen, my / mlen, mz / mlen];
+    if (seg.glyphSprite) seg.glyphSprite.position.set(dir[0] * (SPHERE_RADIUS * 1.01), dir[1] * (SPHERE_RADIUS * 1.01), dir[2] * (SPHERE_RADIUS * 1.01));
+    if (seg.nameSprite) seg.nameSprite.position.set(dir[0] * (SPHERE_RADIUS * 1.16), dir[1] * (SPHERE_RADIUS * 1.16) - 0.15, dir[2] * (SPHERE_RADIUS * 1.16));
+  }
 }
 
 function setDirectionYears(t) {
@@ -175,7 +197,9 @@ function rebuild() {
 
   if (layers.zodiacBand || layers.zodiacNames) {
     const zodiacBand = computeZodiacBand(date, state.observer, SPHERE_RADIUS);
-    skyGroup.add(buildZodiacBand(zodiacBand, { band: layers.zodiacBand, names: layers.zodiacNames }));
+    const zb = buildZodiacBand(zodiacBand, { band: layers.zodiacBand, names: layers.zodiacNames });
+    skyGroup.add(zb.group);
+    rotatables.zodiacSegments = zb.segments;
   }
 
   const significatorKey = pathSelect.value;

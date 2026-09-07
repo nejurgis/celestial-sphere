@@ -47,11 +47,14 @@ function tubeFromPoints(points, color, opts = {}) {
   return new THREE.Mesh(geom, mat);
 }
 
+// innerPts/outerPts: [{ ra, dec, xyz }] — ra/dec kept on the geometry
+// even though only xyz is drawn, so the ribbon can be reprojected in place
+// (same technique as the ecliptic line) during direction playback.
 function buildRibbon(innerPts, outerPts, color, opacity = 0.5) {
   const n = innerPts.length;
   const positions = [];
   for (let i = 0; i < n; i++) {
-    positions.push(...innerPts[i], ...outerPts[i]);
+    positions.push(...innerPts[i].xyz, ...outerPts[i].xyz);
   }
   const indices = [];
   for (let i = 0; i < n - 1; i++) {
@@ -69,16 +72,28 @@ function buildRibbon(innerPts, outerPts, color, opacity = 0.5) {
 
 // band controls the ribbon AND its glyph together (glyph is meaningless
 // without the band it sits on); names is the sign-name text, independent.
+//
+// Returns { group, segments } — segments = [{ ribbonMesh, innerPts, outerPts,
+// glyphSprite, midRa, midDec, nameSprite? }], letting the whole band be
+// reprojected in place (same technique as planets/ecliptic) so it stays
+// visually glued to the planets during direction playback instead of
+// looking detached from them (the band is ecliptic content, same as the
+// planets — only the horizon-fixed natal imprint lines, position circle
+// and aspect plane, are meant to stay behind as the sky turns).
 export function buildZodiacBand(segments, { band = true, names = true } = {}) {
   const group = new THREE.Group();
+  const rotatableSegments = [];
   for (const seg of segments) {
     const [x, y, z] = seg.midXYZ;
     const len = Math.hypot(x, y, z) || 1;
     const dir = [x / len, y / len, z / len];
+    const entry = { midRa: seg.midRa, midDec: seg.midDec, innerPts: seg.inner, outerPts: seg.outer };
 
     if (band) {
       const color = ELEMENT_COLORS[seg.element];
-      group.add(buildRibbon(seg.inner, seg.outer, color, 0.5));
+      const ribbonMesh = buildRibbon(seg.inner, seg.outer, color, 0.5);
+      group.add(ribbonMesh);
+      entry.ribbonMesh = ribbonMesh;
 
       // ︎ (text-presentation variation selector) stops canvas fillText from
       // falling back to Apple Color Emoji for these codepoints — the same
@@ -87,15 +102,18 @@ export function buildZodiacBand(segments, { band = true, names = true } = {}) {
       const glyph = makeTextSprite(`${seg.glyph}︎`, { color: '#2a2a2a', size: 64, weight: '700', scale: 0.55 });
       glyph.position.set(dir[0] * (RADIUS * 1.01), dir[1] * (RADIUS * 1.01), dir[2] * (RADIUS * 1.01));
       group.add(glyph);
+      entry.glyphSprite = glyph;
     }
 
     if (names) {
       const nameLabel = makeTextSprite(seg.name, { color: '#3a3a3a', size: 24, weight: '600', scale: 0.16 });
       nameLabel.position.set(dir[0] * (RADIUS * 1.16), dir[1] * (RADIUS * 1.16) - 0.15, dir[2] * (RADIUS * 1.16));
       group.add(nameLabel);
+      entry.nameSprite = nameLabel;
     }
+    rotatableSegments.push(entry);
   }
-  return group;
+  return { group, segments: rotatableSegments };
 }
 
 function buildSphere() {
