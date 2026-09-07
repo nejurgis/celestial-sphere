@@ -219,6 +219,18 @@ export function computePositionCircle(raHours, date, observer, radius = 1, steps
 // a 180+ year wait, per the video's own rule.
 export const NAIBOD_DEG_PER_YEAR = 360 / 365.2422;
 
+// A sidereal day (rotation relative to the stars, not the sun) is ~23h56m4s —
+// slightly shorter than a calendar day, since the calendar day also has to
+// cover the sun's own ~0.9856 deg of motion (see NAIBOD_DEG_PER_YEAR above).
+// Used to simulate primary/diurnal motion: reproject a body's NATAL RA/Dec
+// through a LATER sidereal moment (real horizon rotation) without touching
+// its real orbital position, so playback shows the natal sky visibly
+// turning — not a single marker creeping across an otherwise-static scene.
+const SIDEREAL_DAY_MS = 86164090.5;
+export function siderealRotatedDate(natalDate, rotationDeg) {
+  return new Date(natalDate.getTime() + (rotationDeg / 360) * SIDEREAL_DAY_MS);
+}
+
 function forwardArcDeg(fromDeg, toDeg) {
   return (((toDeg - fromDeg) % 360) + 360) % 360;
 }

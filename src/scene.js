@@ -145,10 +145,15 @@ function buildHorizonDisc() {
   return group;
 }
 
+// Returns { group, line, labels } — line's geometry position buffer and
+// each label's sprite can be updated in place (during direction playback,
+// e.g.) without rebuilding anything.
 function buildGreatCircle(points, color, { labelEvery = 30, labelColor = '#555' } = {}) {
   const group = new THREE.Group();
-  group.add(lineFromPoints(points.map(p => p.xyz), color, { opacity: 0.85 }));
+  const line = lineFromPoints(points.map(p => p.xyz), color, { opacity: 0.85 });
+  group.add(line);
 
+  const labels = [];
   for (const p of points) {
     if (p.deg % labelEvery !== 0) continue;
     const [x, y, z] = p.xyz;
@@ -159,8 +164,9 @@ function buildGreatCircle(points, color, { labelEvery = 30, labelColor = '#555' 
     const sprite = makeTextSprite(`${p.deg}°`, { color: labelColor, size: 30, scale: 0.2 });
     sprite.position.set(lx, ly, lz);
     group.add(sprite);
+    labels.push({ deg: p.deg, ra: p.ra, dec: p.dec, sprite });
   }
-  return group;
+  return { group, line, labels, points };
 }
 
 function buildPoleAxis(poleXYZ) {
@@ -176,10 +182,13 @@ function buildPoleAxis(poleXYZ) {
   return group;
 }
 
+// Returns { group, markers } — markers = [{ key, mesh, label }], each
+// repositionable in place during direction playback.
 function buildPlanets(planets, showDegrees) {
   const group = new THREE.Group();
   const geom = new THREE.SphereGeometry(0.09, 16, 16);
   const mat = new THREE.MeshBasicMaterial({ color: PLANET_COLOR });
+  const markers = [];
 
   for (const p of planets) {
     const [x, y, z] = p.xyz;
@@ -192,8 +201,10 @@ function buildPlanets(planets, showDegrees) {
     const len = Math.hypot(x, y, z) || 1;
     label.position.set((x / len) * 1.12 * len, (y / len) * 1.12 * len + 0.22, (z / len) * 1.12 * len);
     group.add(label);
+
+    markers.push({ key: p.key, ra: p.ra, dec: p.dec, mesh: marker, label });
   }
-  return group;
+  return { group, markers };
 }
 
 function buildAngleMarker(point, label, color, hexColor, showDegrees) {
@@ -301,21 +312,40 @@ export const DEFAULT_LAYERS = {
   zodiacBand: true, zodiacNames: true, angles: true, degrees: false,
 };
 
+// Returns { group, rotatables }. rotatables holds direct refs to the
+// planet markers and the ecliptic line/labels — during direction playback
+// these are repositioned in place (natal RA/Dec held fixed, reprojected
+// through a later sidereal moment) to visibly turn the whole natal sky, the
+// way the source material describes primary motion rather than a single
+// marker creeping across an otherwise-static backdrop.
 export function buildSkyGroup(state, layers = DEFAULT_LAYERS) {
   const group = new THREE.Group();
   group.add(buildSphere());
   group.add(buildHorizonDisc());
   group.add(buildPoleAxis(state.poleXYZ));
-  if (layers.equator) group.add(buildGreatCircle(state.equatorPoints, EQUATOR_COLOR, { labelColor: '#2f6fb0' }));
-  if (layers.ecliptic) group.add(buildGreatCircle(state.eclipticPoints, ECLIPTIC_COLOR, { labelColor: '#2f9e44' }));
-  if (layers.planets) group.add(buildPlanets(state.planets, layers.degrees));
+
+  const rotatables = { planetMarkers: [], eclipticLine: null, eclipticLabels: [], eclipticPoints: [] };
+
+  if (layers.equator) group.add(buildGreatCircle(state.equatorPoints, EQUATOR_COLOR, { labelColor: '#2f6fb0' }).group);
+  if (layers.ecliptic) {
+    const ecl = buildGreatCircle(state.eclipticPoints, ECLIPTIC_COLOR, { labelColor: '#2f9e44' });
+    group.add(ecl.group);
+    rotatables.eclipticLine = ecl.line;
+    rotatables.eclipticLabels = ecl.labels;
+    rotatables.eclipticPoints = ecl.points;
+  }
+  if (layers.planets) {
+    const pl = buildPlanets(state.planets, layers.degrees);
+    group.add(pl.group);
+    rotatables.planetMarkers = pl.markers;
+  }
   if (layers.angles) {
     group.add(buildAngleMarker(state.mc, 'MC', MERIDIAN_AXIS_COLOR, '#a8790f', layers.degrees));
     group.add(buildAngleMarker(state.ic, 'IC', MERIDIAN_AXIS_COLOR, '#a8790f', layers.degrees));
     if (state.asc) group.add(buildAngleMarker(state.asc, 'ASC', HORIZON_AXIS_COLOR, '#0e8a94', layers.degrees));
     if (state.dsc) group.add(buildAngleMarker(state.dsc, 'DSC', HORIZON_AXIS_COLOR, '#0e8a94', layers.degrees));
   }
-  return group;
+  return { group, rotatables };
 }
 
 export const SPHERE_RADIUS = RADIUS;

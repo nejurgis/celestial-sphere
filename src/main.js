@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeDirection, computeZodiacBand,
-  computeAspectPlane, computeAspectPoint, PLANETS, PATH_WINDOW_DAYS,
+  computeAspectPlane, computeAspectPoint, siderealRotatedDate, horizonOf, altAzToXYZ,
+  NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
 } from './astro.js';
 import {
   buildSkyGroup, buildPlanetPath, buildPositionCircle, buildDirectionGroup, buildZodiacBand,
@@ -40,6 +41,9 @@ controls.maxDistance = SPHERE_RADIUS * 6;
 scene.add(new THREE.AmbientLight(0xffffff, 1));
 
 let skyGroup = null;
+let rotatables = { planetMarkers: [], eclipticLine: null, eclipticLabels: [], eclipticPoints: [] };
+let natalDate = null;
+let natalObserver = null;
 
 // Primary-direction playback state.
 let direction = null;
@@ -88,6 +92,44 @@ function updateReadout() {
     : `Directional arc: ${directionYears.toFixed(1)} / ${direction.arcYears.toFixed(1)} yrs${direction.swapped ? ' (converse)' : ''}`;
 }
 
+// Reprojects the natal sky (planets + ecliptic) through a later sidereal
+// moment — same natal RA/Dec throughout, only the horizon-viewing time
+// changes — so the whole sky visibly turns during playback, matching how
+// the source material describes primary motion (the entire celestial
+// sphere rotating, not one marker creeping across a static backdrop).
+// Position circle, aspect plane, angles, zodiac band and horizon/pole stay
+// as drawn at t=0 — this is the natal "imprint," fixed relative to the
+// horizon by definition (see the position-circle comment in astro.js).
+function reprojectRotatables(rotationDeg) {
+  if (!natalObserver) return;
+  const fakeDate = siderealRotatedDate(natalDate, rotationDeg);
+  const reposition = (raHours, decDeg) => {
+    const { azimuth, altitude } = horizonOf(fakeDate, natalObserver, raHours, decDeg);
+    return altAzToXYZ(altitude, azimuth, SPHERE_RADIUS);
+  };
+
+  for (const m of rotatables.planetMarkers) {
+    const [x, y, z] = reposition(m.ra, m.dec);
+    m.mesh.position.set(x, y, z);
+    const len = Math.hypot(x, y, z) || 1;
+    m.label.position.set((x / len) * 1.12 * len, (y / len) * 1.12 * len + 0.22, (z / len) * 1.12 * len);
+  }
+
+  if (rotatables.eclipticLine && rotatables.eclipticPoints.length) {
+    const posAttr = rotatables.eclipticLine.geometry.attributes.position;
+    rotatables.eclipticPoints.forEach((p, i) => {
+      const [x, y, z] = reposition(p.ra, p.dec);
+      posAttr.setXYZ(i, x, y, z);
+    });
+    posAttr.needsUpdate = true;
+  }
+  for (const l of rotatables.eclipticLabels) {
+    const [x, y, z] = reposition(l.ra, l.dec);
+    const len = Math.hypot(x, y, z) || 1;
+    l.sprite.position.set((x / len) * (SPHERE_RADIUS * 1.03), (y / len) * (SPHERE_RADIUS * 1.03), (z / len) * (SPHERE_RADIUS * 1.03));
+  }
+}
+
 function setDirectionYears(t) {
   if (!direction) return;
   directionYears = Math.max(0, Math.min(t, direction.arcYears));
@@ -98,6 +140,7 @@ function setDirectionYears(t) {
     directionMarker.markerMaterial.color.set(hit ? DIRECTION_COLORS.hit : DIRECTION_COLORS.active);
     if (hit) stopPlaying();
   }
+  reprojectRotatables(directionYears * NAIBOD_DEG_PER_YEAR);
   slider.value = String(directionYears);
   updateReadout();
 }
@@ -123,8 +166,12 @@ function rebuild() {
 
   const layers = readLayerCheckboxes();
 
+  natalDate = date;
   const state = computeSkyState(date, latitude, longitude, SPHERE_RADIUS);
-  skyGroup = buildSkyGroup(state, layers);
+  natalObserver = state.observer;
+  const built = buildSkyGroup(state, layers);
+  skyGroup = built.group;
+  rotatables = built.rotatables;
 
   if (layers.zodiacBand || layers.zodiacNames) {
     const zodiacBand = computeZodiacBand(date, state.observer, SPHERE_RADIUS);
