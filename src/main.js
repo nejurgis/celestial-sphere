@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeDirection, computeZodiacBand,
-  PLANETS, PATH_WINDOW_DAYS,
+  computeAspectPlane, PLANETS, PATH_WINDOW_DAYS,
 } from './astro.js';
 import {
   buildSkyGroup, buildPlanetPath, buildPositionCircle, buildDirectionGroup, buildZodiacBand,
-  DIRECTION_COLORS, SPHERE_RADIUS,
+  buildAspectPlane, DIRECTION_COLORS, SPHERE_RADIUS,
 } from './scene.js';
 
 const BODY_BY_KEY = Object.fromEntries(PLANETS.map(p => [p.key, p.body]));
@@ -63,10 +63,12 @@ function stopPlaying() {
 const legendRows = document.querySelectorAll('#legend [data-layer]');
 
 function updateLegend(layers, significatorKey, promissorKey) {
+  const significatorIsBody = !!(significatorKey && BODY_BY_KEY[significatorKey]);
   const visible = {
     ...layers,
-    path: !!(significatorKey && BODY_BY_KEY[significatorKey]),
+    path: significatorIsBody,
     positionCircle: !!significatorKey,
+    aspectPlane: layers.aspectPlane && significatorIsBody,
     direction: !!(significatorKey && promissorKey && significatorKey !== promissorKey),
   };
   legendRows.forEach(row => { row.hidden = !visible[row.dataset.layer]; });
@@ -138,6 +140,11 @@ function rebuild() {
       const windowDays = PATH_WINDOW_DAYS[significatorKey] ?? 200;
       const path = computePlanetPath(body, date, state.observer, windowDays, SPHERE_RADIUS);
       skyGroup.add(buildPlanetPath(path, significatorKey));
+
+      if (layers.aspectPlane) {
+        const aspectPlane = computeAspectPlane(body, date, state.observer, SPHERE_RADIUS);
+        skyGroup.add(buildAspectPlane(aspectPlane, significatorKey));
+      }
     }
 
     const significatorPoint = resolveDirectionPoint(significatorKey, state);
@@ -195,7 +202,7 @@ const lonInput = document.getElementById('lon-input');
 const nowBtn = document.getElementById('now-btn');
 const pathSelect = document.getElementById('path-select');
 
-const LAYER_IDS = ['equator', 'ecliptic', 'planets', 'zodiacBand', 'zodiacNames', 'angles', 'degrees'];
+const LAYER_IDS = ['equator', 'ecliptic', 'planets', 'zodiacBand', 'zodiacNames', 'angles', 'degrees', 'aspectPlane'];
 const layerCheckboxes = Object.fromEntries(LAYER_IDS.map(id => [id, document.getElementById(`layer-${id}`)]));
 
 function readLayerCheckboxes() {

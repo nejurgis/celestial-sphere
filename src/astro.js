@@ -295,3 +295,110 @@ export function computeZodiacBand(date, observer, radius = 1, halfWidthDeg = 4, 
     };
   });
 }
+
+// ── Morinus's plane of aspects ──────────────────────────────────────────────
+// A great circle that (a) always passes through the planet's current
+// position and (b) is inclined to the ecliptic by exactly the planet's
+// maximum celestial latitude over its CURRENT node-to-node swing (not an
+// arbitrary sampling window — the swing bounded by the two nearest zero-
+// latitude crossings on either side of "now"). Those two constraints pin
+// down the plane's tilt but leave its exact orientation (which of two
+// mirror-image circles) ambiguous from the constraints alone; resolved by
+// requiring the plane's local direction of travel at the planet's position
+// to match the planet's actual direction of motion.
+//
+// This is solved as vector geometry (a plane through the origin has a unit
+// normal N), not trig-formula branching:
+//   - N must make angle `inclination` with the ecliptic pole Z=(0,0,1).
+//   - N must be perpendicular to the planet's position vector P (so the
+//     plane through the origin with normal N contains P).
+// Those two conditions generically admit exactly two solutions for N
+// (mirror images), disambiguated as described above.
+
+const eclipticToCartesian = (elonDeg, elatDeg) => {
+  const lon = (elonDeg * Math.PI) / 180, lat = (elatDeg * Math.PI) / 180;
+  return [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
+};
+const cartesianToEcliptic = ([x, y, z]) => {
+  const elat = (Math.asin(Math.max(-1, Math.min(1, z))) * 180) / Math.PI;
+  const elon = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  return { elon, elat };
+};
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const scale3 = (v, s) => [v[0] * s, v[1] * s, v[2] * s];
+const norm3 = v => { const n = Math.hypot(...v) || 1; return [v[0] / n, v[1] / n, v[2] / n]; };
+
+export function computeAspectPlane(body, date, observer, radius = 1, searchWindowDays = 250, steps = 120) {
+  const nowEcl = eclipticOf(body, date);
+  const P0 = eclipticToCartesian(nowEcl.elon, nowEcl.elat);
+  const sampleElat = d => eclipticOf(body, new Date(date.getTime() + d * 86400000)).elat;
+
+  // Nearest node (elat=0 crossing) on each side of "now".
+  const nowSign = Math.sign(nowEcl.elat) || 1;
+  let prevNodeDay = -searchWindowDays;
+  for (let d = -1; d >= -searchWindowDays; d--) {
+    if (Math.sign(sampleElat(d)) !== nowSign) { prevNodeDay = d; break; }
+  }
+  let nextNodeDay = searchWindowDays;
+  for (let d = 1; d <= searchWindowDays; d++) {
+    if (Math.sign(sampleElat(d)) !== nowSign) { nextNodeDay = d; break; }
+  }
+
+  // Max |latitude| within this single swing only.
+  let maxAbsLat = Math.abs(nowEcl.elat);
+  for (let d = prevNodeDay; d <= nextNodeDay; d++) {
+    const e = Math.abs(sampleElat(d));
+    if (e > maxAbsLat) maxAbsLat = e;
+  }
+  const inclinationDeg = maxAbsLat;
+  const iRad = (inclinationDeg * Math.PI) / 180;
+
+  // Solve for the plane's normal N: angle(N,Z)=i, N ⊥ P0.
+  const Z = [0, 0, 1];
+  const Zperp = sub3(Z, scale3(P0, dot3(Z, P0)));
+  const sinGamma = Math.hypot(...Zperp) || 1e-9; // |component of Z perpendicular to P0|
+  const e1 = norm3(Zperp);
+  const e2 = norm3(cross3(P0, e1));
+  const cosTheta = Math.max(-1, Math.min(1, Math.cos(iRad) / sinGamma));
+  const theta0 = Math.acos(cosTheta);
+
+  const buildN = theta => norm3([
+    Math.cos(theta) * e1[0] + Math.sin(theta) * e2[0],
+    Math.cos(theta) * e1[1] + Math.sin(theta) * e2[1],
+    Math.cos(theta) * e1[2] + Math.sin(theta) * e2[2],
+  ]);
+  const Na = buildN(theta0);
+  const Nb = buildN(-theta0);
+
+  // Disambiguate: whichever candidate's in-plane tangent direction at P0
+  // best matches the planet's real short-term motion direction.
+  const laterEcl = eclipticOf(body, new Date(date.getTime() + 6 * 3600000));
+  const P1 = eclipticToCartesian(laterEcl.elon, laterEcl.elat);
+  const realDir = norm3(sub3(P1, P0));
+  const tangentAt = N => norm3(cross3(N, P0));
+  const score = N => Math.abs(dot3(tangentAt(N), realDir));
+  const N = score(Na) >= score(Nb) ? Na : Nb;
+
+  // Sample the circle: any two orthonormal vectors spanning the plane ⊥ N.
+  const ref = Math.abs(N[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  const u = norm3(cross3(N, ref));
+  const v = cross3(N, u);
+
+  const points = [];
+  for (let k = 0; k <= steps; k++) {
+    const phi = (k / steps) * 2 * Math.PI;
+    const vec = [
+      Math.cos(phi) * u[0] + Math.sin(phi) * v[0],
+      Math.cos(phi) * u[1] + Math.sin(phi) * v[1],
+      Math.cos(phi) * u[2] + Math.sin(phi) * v[2],
+    ];
+    const { elon, elat } = cartesianToEcliptic(vec);
+    const eq = eclipticPointToEquatorial(elon, elat, date);
+    const h = horizonOf(date, observer, eq.ra, eq.dec);
+    points.push(altAzToXYZ(h.altitude, h.azimuth, radius));
+  }
+
+  return { points, inclinationDeg, planetElon: nowEcl.elon, planetElat: nowEcl.elat, N, P0 };
+}

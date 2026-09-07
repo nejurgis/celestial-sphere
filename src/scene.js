@@ -20,6 +20,7 @@ const POSITION_CIRCLE_COLOR = 0x8b5cf6;
 const DIRECTION_COLOR = 0xe08a1e;
 const DIRECTION_HIT_COLOR = 0x22c55e;
 const ELEMENT_COLORS = { fire: 0xd9633b, earth: 0x7c9a52, air: 0xe0bd4a, water: 0x4a90b8 };
+const ASPECT_PLANE_COLOR = 0xd4c419; // yellow, matching the source material's own color choice
 
 function lineFromPoints(points, color, opts = {}) {
   const geom = new THREE.BufferGeometry().setFromPoints(
@@ -234,6 +235,25 @@ export function buildPositionCircle(result, planetKey) {
   const label = makeTextSprite(`${planetKey} mundane pos.`, { color: '#8b5cf6', size: 26, scale: 0.18 });
   const [x, y, z] = result.mundaneXYZ;
   label.position.set(x * 1.08, y * 1.08 + 0.15, z * 1.08);
+  group.add(label);
+
+  return group;
+}
+
+// Morinus's plane of aspects — a great circle through the planet, inclined
+// to the ecliptic by its current-swing maximum latitude.
+export function buildAspectPlane(result, planetKey) {
+  const group = new THREE.Group();
+  group.add(lineFromPoints(result.points, ASPECT_PLANE_COLOR, { opacity: 0.6 }));
+
+  const label = makeTextSprite(`${planetKey} aspect plane (${result.inclinationDeg.toFixed(1)}°)`, {
+    color: '#a89419', size: 24, scale: 0.17,
+  });
+  // Place the label near the planet's own point on the circle, not the peak —
+  // the circle is symmetric so there's no single obvious "far" point to avoid.
+  const idx = Math.round(result.points.length * 0.08);
+  const p = result.points[idx];
+  label.position.set(p[0] * 1.08, p[1] * 1.08 + 0.15, p[2] * 1.08);
   group.add(label);
 
   return group;
