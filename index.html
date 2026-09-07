@@ -74,7 +74,13 @@
       .table-panel-header button { padding: 6px 10px; border: none; border-radius: 6px; background: #2f6fb0; color: #fff; font-weight: 600; cursor: pointer; }
       .table-scroll { overflow-y: auto; padding: 0 16px 16px; }
       #table-panel table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-      #table-panel th { position: sticky; top: 0; background: #fff; text-align: left; padding: 8px 6px; border-bottom: 2px solid #ddd; color: #666; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+      #table-panel th { position: sticky; top: 0; background: #fff; text-align: left; padding: 8px 6px; border-bottom: 2px solid #ddd; color: #666; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+      #table-panel th .help {
+        display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
+        border-radius: 50%; background: #d8dde3; color: #666; font-size: 0.65rem; font-weight: 700;
+        text-transform: none; letter-spacing: 0; cursor: help; margin-left: 2px; vertical-align: middle;
+      }
+      #table-panel th .help:hover { background: #2f6fb0; color: #fff; }
       #table-panel td { padding: 6px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
       #table-panel tr.type-c td:nth-child(5) { color: #a8321e; }
       #table-panel tr.type-d td:nth-child(5) { color: #2f6fb0; }
@@ -208,7 +214,15 @@
         <div class="table-scroll">
           <table>
             <thead>
-              <tr><th>Sgnf.</th><th>Promissor</th><th>Position</th><th>Arc</th><th>Type</th><th>Age</th><th>Date</th></tr>
+              <tr>
+                <th>Sgnf. <span class="help" title="Significator — the planet or angle whose natal imprint receives the influence. The topic being activated (which life area depends on what that planet/angle represents in the chart).">?</span></th>
+                <th>Promissor <span class="help" title="The moving point whose primary motion carries it toward the significator's fixed position circle — the trigger. A symbol after the name (e.g. □) means an aspect is cast in that planet's Morinus aspect plane, not a plain conjunction.">?</span></th>
+                <th>Position <span class="help" title="The promissor's actual zodiac degree at birth — where the aspect (if any) is measured from.">?</span></th>
+                <th>Arc <span class="help" title="The angular distance, in degrees of Right Ascension, the promissor travels via primary motion to complete this direction.">?</span></th>
+                <th>Type <span class="help" title="D = Direct: promissor moves toward the significator's fixed position. C = Converse: roles swapped because the direct arc would exceed 180 degrees (~180 years). Converse is not weaker or lesser — per the source material, it 'produces future events to the same extent' as Direct. Purely a computational choice to keep the arc under one lifetime.">?</span></th>
+                <th>Age <span class="help" title="Age in years at which this direction becomes exact, via the Naibod key: 1 degree of arc is approximately 1 year (the sun's mean daily motion, 0.9856 degrees).">?</span></th>
+                <th>Date <span class="help" title="Calendar date this direction becomes exact, computed from your birth date plus the age above.">?</span></th>
+              </tr>
             </thead>
             <tbody id="table-body"></tbody>
           </table>
