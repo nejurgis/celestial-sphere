@@ -19,6 +19,21 @@ export function makeObserver(latitude, longitude) {
   return new Astronomy.Observer(latitude, longitude, 0);
 }
 
+export const ZODIAC_SIGNS = [
+  { name: 'Aries', glyph: '♈', element: 'fire' },
+  { name: 'Taurus', glyph: '♉', element: 'earth' },
+  { name: 'Gemini', glyph: '♊', element: 'air' },
+  { name: 'Cancer', glyph: '♋', element: 'water' },
+  { name: 'Leo', glyph: '♌', element: 'fire' },
+  { name: 'Virgo', glyph: '♍', element: 'earth' },
+  { name: 'Libra', glyph: '♎', element: 'air' },
+  { name: 'Scorpio', glyph: '♏', element: 'water' },
+  { name: 'Sagittarius', glyph: '♐', element: 'fire' },
+  { name: 'Capricorn', glyph: '♑', element: 'earth' },
+  { name: 'Aquarius', glyph: '♒', element: 'air' },
+  { name: 'Pisces', glyph: '♓', element: 'water' },
+];
+
 // How many days of real motion (centered on "now") to sample when tracing a
 // planet's path — wide enough to capture one full retrograde loop. Roughly
 // matched to each body's synodic period. Sun/Moon excluded (no loop / loop
@@ -228,4 +243,31 @@ export function computeDirection(promissor, significator, natalDate, observer, r
     movingKey: moving.key, fixedKey: fixed.key, swapped,
     arcDeg, arcYears, directedXYZ, sweepPoints,
   };
+}
+
+// ── Zodiac band ────────────────────────────────────────────────────────────
+// A thick ribbon following the ecliptic, split into the 12 signs. Each
+// segment's inner/outer edges are real ecliptic-latitude offsets (±halfWidth)
+// run through the same equatorial/horizon pipeline as everything else, not a
+// flat visual approximation — the ribbon actually curves with the sky.
+export function computeZodiacBand(date, observer, radius = 1, halfWidthDeg = 4, samplesPerSign = 8) {
+  return ZODIAC_SIGNS.map((sign, s) => {
+    const inner = [];
+    const outer = [];
+    for (let i = 0; i <= samplesPerSign; i++) {
+      const elon = s * 30 + (i / samplesPerSign) * 30;
+      const eqOuter = eclipticPointToEquatorial(elon, halfWidthDeg, date);
+      const eqInner = eclipticPointToEquatorial(elon, -halfWidthDeg, date);
+      const hOuter = horizonOf(date, observer, eqOuter.ra, eqOuter.dec);
+      const hInner = horizonOf(date, observer, eqInner.ra, eqInner.dec);
+      outer.push(altAzToXYZ(hOuter.altitude, hOuter.azimuth, radius));
+      inner.push(altAzToXYZ(hInner.altitude, hInner.azimuth, radius));
+    }
+    const midEq = eclipticPointToEquatorial(s * 30 + 15, 0, date);
+    const midH = horizonOf(date, observer, midEq.ra, midEq.dec);
+    return {
+      ...sign, index: s, inner, outer,
+      midXYZ: altAzToXYZ(midH.altitude, midH.azimuth, radius),
+    };
+  });
 }

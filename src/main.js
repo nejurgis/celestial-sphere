@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
-  computeSkyState, computePlanetPath, computePositionCircle, computeDirection,
+  computeSkyState, computePlanetPath, computePositionCircle, computeDirection, computeZodiacBand,
   PLANETS, PATH_WINDOW_DAYS,
 } from './astro.js';
-import { buildSkyGroup, buildPlanetPath, buildPositionCircle, buildDirectionGroup, DIRECTION_COLORS, SPHERE_RADIUS } from './scene.js';
+import {
+  buildSkyGroup, buildPlanetPath, buildPositionCircle, buildDirectionGroup, buildZodiacBand,
+  DIRECTION_COLORS, SPHERE_RADIUS,
+} from './scene.js';
 
 const BODY_BY_KEY = Object.fromEntries(PLANETS.map(p => [p.key, p.body]));
 
@@ -95,6 +98,9 @@ function rebuild() {
 
   const state = computeSkyState(date, latitude, longitude, SPHERE_RADIUS);
   skyGroup = buildSkyGroup(state);
+
+  const zodiacBand = computeZodiacBand(date, state.observer, SPHERE_RADIUS);
+  skyGroup.add(buildZodiacBand(zodiacBand));
 
   const significatorKey = pathSelect.value;
   if (significatorKey) {

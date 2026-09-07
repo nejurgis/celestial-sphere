@@ -18,6 +18,7 @@ const PATH_COLOR = 0xa8321e;
 const POSITION_CIRCLE_COLOR = 0x8b5cf6;
 const DIRECTION_COLOR = 0xe08a1e;
 const DIRECTION_HIT_COLOR = 0x22c55e;
+const ELEMENT_COLORS = { fire: 0xd9633b, earth: 0x7c9a52, air: 0xe0bd4a, water: 0x4a90b8 };
 
 function lineFromPoints(points, color, opts = {}) {
   const geom = new THREE.BufferGeometry().setFromPoints(
@@ -29,6 +30,41 @@ function lineFromPoints(points, color, opts = {}) {
   const line = new THREE.Line(geom, material);
   if (opts.dashed) line.computeLineDistances();
   return line;
+}
+
+function buildRibbon(innerPts, outerPts, color, opacity = 0.5) {
+  const n = innerPts.length;
+  const positions = [];
+  for (let i = 0; i < n; i++) {
+    positions.push(...innerPts[i], ...outerPts[i]);
+  }
+  const indices = [];
+  for (let i = 0; i < n - 1; i++) {
+    const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+    indices.push(a, b, c, b, d, c);
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.setIndex(indices);
+  const mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false,
+  });
+  return new THREE.Mesh(geom, mat);
+}
+
+export function buildZodiacBand(segments) {
+  const group = new THREE.Group();
+  for (const seg of segments) {
+    const color = ELEMENT_COLORS[seg.element];
+    group.add(buildRibbon(seg.inner, seg.outer, color, 0.5));
+
+    const label = makeTextSprite(`${seg.glyph} ${seg.name}`, { color: '#3a3a3a', size: 30, weight: '700', scale: 0.24 });
+    const [x, y, z] = seg.midXYZ;
+    const len = Math.hypot(x, y, z) || 1;
+    label.position.set((x / len) * (RADIUS * 1.14), (y / len) * (RADIUS * 1.14), (z / len) * (RADIUS * 1.14));
+    group.add(label);
+  }
+  return group;
 }
 
 function buildSphere() {
