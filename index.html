@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Celestial Sphere</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #f4f6f9; font: 14px/1.4 -apple-system, system-ui, sans-serif; color: #222; overflow: hidden; }
+      #app { position: relative; width: 100vw; height: 100vh; }
+      #viewport { position: absolute; inset: 0; }
+      #scene { width: 100%; height: 100%; display: block; }
+
+      #panel {
+        position: absolute; top: 16px; left: 16px; z-index: 10;
+        background: rgba(255,255,255,0.92); border: 1px solid #e0e0e0; border-radius: 10px;
+        padding: 14px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); backdrop-filter: blur(6px);
+        display: flex; flex-direction: column; gap: 8px; min-width: 220px;
+      }
+      #panel h1 { font-size: 0.95rem; margin: 0 0 4px; }
+      #panel label { display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; color: #666; }
+      #panel input, #panel select {
+        font: inherit; padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #222;
+      }
+      #panel .row { display: flex; gap: 8px; }
+      #panel .row label { flex: 1; }
+      #panel button {
+        margin-top: 4px; padding: 7px 10px; border: none; border-radius: 6px; background: #2f6fb0; color: #fff;
+        font-weight: 600; cursor: pointer;
+      }
+      #panel button:hover { background: #275c92; }
+
+      #legend {
+        position: absolute; bottom: 16px; left: 16px; z-index: 10; font-size: 0.75rem; color: #555;
+        background: rgba(255,255,255,0.85); border-radius: 8px; padding: 8px 12px; line-height: 1.7;
+      }
+      #legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="viewport"><canvas id="scene"></canvas></div>
+
+      <div id="panel">
+        <h1>⊹ Celestial Sphere</h1>
+        <label>Date &amp; time (local)
+          <input id="date-input" type="datetime-local">
+        </label>
+        <div class="row">
+          <label>Latitude
+            <input id="lat-input" type="number" step="0.01" min="-90" max="90">
+          </label>
+          <label>Longitude
+            <input id="lon-input" type="number" step="0.01" min="-180" max="180">
+          </label>
+        </div>
+        <label>Show path of
+          <select id="path-select">
+            <option value="">None</option>
+            <option value="Mercury">Mercury</option>
+            <option value="Venus" selected>Venus</option>
+            <option value="Mars">Mars</option>
+            <option value="Jupiter">Jupiter</option>
+            <option value="Saturn">Saturn</option>
+          </select>
+        </label>
+        <button id="now-btn" type="button">Now</button>
+      </div>
+
+      <div id="legend">
+        <div><span class="dot" style="background:#2f9e44"></span>Ecliptic (zodiac circle)</div>
+        <div><span class="dot" style="background:#2f6fb0"></span>Celestial equator</div>
+        <div><span class="dot" style="background:#d23b3b"></span>Planets</div>
+        <div><span class="dot" style="background:#a8321e"></span>Planet's real path (loop)</div>
+        <div>Drag to rotate · scroll to zoom</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
