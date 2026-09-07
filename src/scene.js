@@ -58,11 +58,21 @@ export function buildZodiacBand(segments) {
     const color = ELEMENT_COLORS[seg.element];
     group.add(buildRibbon(seg.inner, seg.outer, color, 0.5));
 
-    const label = makeTextSprite(`${seg.glyph} ${seg.name}`, { color: '#3a3a3a', size: 30, weight: '700', scale: 0.24 });
     const [x, y, z] = seg.midXYZ;
     const len = Math.hypot(x, y, z) || 1;
-    label.position.set((x / len) * (RADIUS * 1.14), (y / len) * (RADIUS * 1.14), (z / len) * (RADIUS * 1.14));
-    group.add(label);
+    const dir = [x / len, y / len, z / len];
+
+    // ︎ (text-presentation variation selector) stops canvas fillText from
+    // falling back to Apple Color Emoji for these codepoints — the same
+    // U+2648-2653 range Radio-Venus uses directly with no special handling,
+    // since normal DOM text doesn't hit that fallback.
+    const glyph = makeTextSprite(`${seg.glyph}︎`, { color: '#2a2a2a', size: 64, weight: '700', scale: 0.55 });
+    glyph.position.set(dir[0] * (RADIUS * 1.01), dir[1] * (RADIUS * 1.01), dir[2] * (RADIUS * 1.01));
+    group.add(glyph);
+
+    const nameLabel = makeTextSprite(seg.name, { color: '#3a3a3a', size: 24, weight: '600', scale: 0.16 });
+    nameLabel.position.set(dir[0] * (RADIUS * 1.16), dir[1] * (RADIUS * 1.16) - 0.15, dir[2] * (RADIUS * 1.16));
+    group.add(nameLabel);
   }
   return group;
 }
