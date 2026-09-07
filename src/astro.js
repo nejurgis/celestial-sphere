@@ -400,5 +400,29 @@ export function computeAspectPlane(body, date, observer, radius = 1, searchWindo
     points.push(altAzToXYZ(h.altitude, h.azimuth, radius));
   }
 
-  return { points, inclinationDeg, planetElon: nowEcl.elon, planetElat: nowEcl.elat, N, P0 };
+  return { points, inclinationDeg, planetElon: nowEcl.elon, planetElat: nowEcl.elat, N, P0, u, v, date };
+}
+
+// A classical aspect of the planet, cast IN THE ASPECT PLANE (not the
+// ecliptic) — Morinus's whole point. The aspect point is simply the
+// position on the same great circle offset by the aspect angle, measured
+// along the circle from the planet's own position — same u/v parametrization
+// already used to sample the plane's points, so this is exact, not a second
+// approximation layered on top.
+//
+// offsetDeg: 60=sextile, 90=square, 120=trine, 180=opposition. sinister
+// (direction of increasing sign order, the classical default) is positive;
+// dexter (against the order of signs) is negative — pass -offsetDeg for it.
+export function computeAspectPoint(aspectPlane, offsetDeg) {
+  const { P0, u, v, date } = aspectPlane;
+  const phi0 = Math.atan2(dot3(P0, v), dot3(P0, u));
+  const phi = phi0 + (offsetDeg * Math.PI) / 180;
+  const vec = [
+    Math.cos(phi) * u[0] + Math.sin(phi) * v[0],
+    Math.cos(phi) * u[1] + Math.sin(phi) * v[1],
+    Math.cos(phi) * u[2] + Math.sin(phi) * v[2],
+  ];
+  const { elon, elat } = cartesianToEcliptic(vec);
+  const eq = eclipticPointToEquatorial(elon, elat, date);
+  return { elon, elat, ra: eq.ra, dec: eq.dec };
 }

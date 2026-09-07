@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeDirection, computeZodiacBand,
-  computeAspectPlane, PLANETS, PATH_WINDOW_DAYS,
+  computeAspectPlane, computeAspectPoint, PLANETS, PATH_WINDOW_DAYS,
 } from './astro.js';
 import {
   buildSkyGroup, buildPlanetPath, buildPositionCircle, buildDirectionGroup, buildZodiacBand,
@@ -11,6 +11,7 @@ import {
 
 const BODY_BY_KEY = Object.fromEntries(PLANETS.map(p => [p.key, p.body]));
 const ANGLE_KEYS = ['ASC', 'DSC', 'MC', 'IC'];
+const ASPECT_GLYPHS = { 0: '☌', 60: '⚹', 90: '□', 120: '△', 180: '☍' };
 
 // Resolves a dropdown key to a direction-capable point: a real planet
 // ({key, body}) or one of the four angles ({key, ra, dec}, pulled from the
@@ -156,12 +157,26 @@ function rebuild() {
   }
 
   const promissorKey = promissorSelect.value;
+  const aspectDeg = parseFloat(aspectSelect.value) * parseFloat(aspectDirectionSelect.value);
   direction = null;
   directionMarker = null;
   directionYears = 0;
   if (significatorKey && promissorKey && significatorKey !== promissorKey) {
+    let promissorPoint = resolveDirectionPoint(promissorKey, state);
+
+    // A non-conjunction aspect is cast IN THE PROMISSOR'S ASPECT PLANE, not
+    // the ecliptic — that's the whole point of the Morinus construction.
+    // Only meaningful for a real body (angles sit at elat=0, so their
+    // "aspect plane" would just be the ecliptic itself).
+    if (aspectDeg !== 0 && BODY_BY_KEY[promissorKey]) {
+      const promissorAspectPlane = computeAspectPlane(BODY_BY_KEY[promissorKey], date, state.observer, SPHERE_RADIUS);
+      if (layers.aspectPlane) skyGroup.add(buildAspectPlane(promissorAspectPlane, promissorKey));
+      const aspectPoint = computeAspectPoint(promissorAspectPlane, aspectDeg);
+      promissorPoint = { key: `${promissorKey} ${ASPECT_GLYPHS[aspectSelect.value]}`, ra: aspectPoint.ra, dec: aspectPoint.dec };
+    }
+
     direction = computeDirection(
-      resolveDirectionPoint(promissorKey, state),
+      promissorPoint,
       resolveDirectionPoint(significatorKey, state),
       date, state.observer, SPHERE_RADIUS,
     );
@@ -228,6 +243,8 @@ nowBtn.addEventListener('click', () => {
 
 const directionPanel = document.getElementById('direction-panel');
 const promissorSelect = document.getElementById('promissor-select');
+const aspectSelect = document.getElementById('aspect-select');
+const aspectDirectionSelect = document.getElementById('aspect-direction-select');
 const playBtn = document.getElementById('dir-play');
 const resetBtn = document.getElementById('dir-reset');
 const endBtn = document.getElementById('dir-end');
@@ -237,7 +254,7 @@ const stepSizeSelect = document.getElementById('dir-step-size');
 const slider = document.getElementById('dir-slider');
 const readout = document.getElementById('direction-readout');
 
-promissorSelect.addEventListener('change', rebuild);
+[promissorSelect, aspectSelect, aspectDirectionSelect].forEach(el => el.addEventListener('change', rebuild));
 
 playBtn.addEventListener('click', () => {
   if (!direction) return;
