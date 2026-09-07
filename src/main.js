@@ -60,6 +60,18 @@ function stopPlaying() {
   playBtn.textContent = '▶';
 }
 
+const legendRows = document.querySelectorAll('#legend [data-layer]');
+
+function updateLegend(layers, significatorKey, promissorKey) {
+  const visible = {
+    ...layers,
+    path: !!(significatorKey && BODY_BY_KEY[significatorKey]),
+    positionCircle: !!significatorKey,
+    direction: !!(significatorKey && promissorKey && significatorKey !== promissorKey),
+  };
+  legendRows.forEach(row => { row.hidden = !visible[row.dataset.layer]; });
+}
+
 function updateReadout() {
   if (!direction) {
     readout.textContent = '—';
@@ -156,6 +168,7 @@ function rebuild() {
   }
   slider.value = '0';
   updateReadout();
+  updateLegend(layers, significatorKey, promissorKey);
 
   scene.add(skyGroup);
 }
