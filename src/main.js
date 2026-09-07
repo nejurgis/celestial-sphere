@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeDirection, computeZodiacBand,
-  computeAspectPlane, computeAspectPoint, siderealRotatedDate, horizonOf, altAzToXYZ,
-  NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
+  computeAspectPlane, computeAspectPoint, computeAllDirections, siderealRotatedDate, horizonOf, altAzToXYZ,
+  formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
 } from './astro.js';
 import {
   buildSkyGroup, buildPlanetPath, buildPositionCircle, buildDirectionGroup, buildZodiacBand,
@@ -44,6 +44,7 @@ let skyGroup = null;
 let rotatables = { planetMarkers: [], eclipticLine: null, eclipticLabels: [], eclipticPoints: [], zodiacSegments: [] };
 let natalDate = null;
 let natalObserver = null;
+let lastState = null;
 
 // Primary-direction playback state.
 let direction = null;
@@ -191,6 +192,7 @@ function rebuild() {
   natalDate = date;
   const state = computeSkyState(date, latitude, longitude, SPHERE_RADIUS);
   natalObserver = state.observer;
+  lastState = state;
   const built = buildSkyGroup(state, layers);
   skyGroup = built.group;
   rotatables = built.rotatables;
@@ -340,6 +342,62 @@ endBtn.addEventListener('click', () => { stopPlaying(); if (direction) setDirect
 stepBackBtn.addEventListener('click', () => { stopPlaying(); setDirectionYears(directionYears - parseFloat(stepSizeSelect.value)); });
 stepFwdBtn.addEventListener('click', () => { stopPlaying(); setDirectionYears(directionYears + parseFloat(stepSizeSelect.value)); });
 slider.addEventListener('input', () => { stopPlaying(); setDirectionYears(parseFloat(slider.value)); });
+
+// ── Directions table ("Prognosis") ───────────────────────────────────────
+// Every promissor/significator/aspect combination, chronologically — not
+// just the one direction selected above. Computed on demand (not on every
+// rebuild) since it's ~500-1000 combinations; still only tens of
+// milliseconds, but no reason to pay that on every input change.
+
+const TABLE_POINT_KEYS = [...PLANETS.map(p => p.key), ...ANGLE_KEYS];
+const PLANET_GLYPHS = { Sun: '☉', Moon: '☽', Mercury: '☿', Venus: '♀', Mars: '♂', Jupiter: '♃', Saturn: '♄' };
+const pointLabel = key => PLANET_GLYPHS[key] ?? key;
+
+const tableToggleBtn = document.getElementById('table-toggle-btn');
+const tablePanel = document.getElementById('table-panel');
+const tableMaxYears = document.getElementById('table-max-years');
+const tableRecomputeBtn = document.getElementById('table-recompute-btn');
+const tableCloseBtn = document.getElementById('table-close-btn');
+const tableStatus = document.getElementById('table-status');
+const tableBody = document.getElementById('table-body');
+
+function computeTable() {
+  if (!natalObserver) return;
+  tableStatus.textContent = 'Computing…';
+  const maxYears = parseFloat(tableMaxYears.value) || 150;
+  const resolvePoint = key => resolveDirectionPoint(key, lastState);
+  const bodyOf = key => BODY_BY_KEY[key];
+
+  const t0 = performance.now();
+  const rows = computeAllDirections(TABLE_POINT_KEYS, resolvePoint, bodyOf, natalDate, natalObserver, SPHERE_RADIUS, maxYears);
+  const ms = (performance.now() - t0).toFixed(0);
+
+  tableBody.innerHTML = rows.map(r => {
+    const promissorLabel = pointLabel(r.promissorKey) + (r.aspectGlyph !== '☌' ? r.aspectGlyph : '') + (r.aspectDir ? (r.aspectDir === 'dexter' ? ' (dex)' : '') : '');
+    const position = r.promissorElon != null ? formatEclipticDegree(r.promissorElon) : '—';
+    const type = r.swapped ? 'C' : 'D';
+    const dateStr = r.date.toISOString().slice(0, 10);
+    return `<tr class="type-${type.toLowerCase()}">
+      <td>${pointLabel(r.significatorKey)}</td>
+      <td>${promissorLabel}</td>
+      <td>${position}</td>
+      <td>${r.arcDeg.toFixed(1)}°</td>
+      <td>${type}</td>
+      <td>${r.arcYears.toFixed(1)}</td>
+      <td>${dateStr}</td>
+    </tr>`;
+  }).join('');
+
+  tableStatus.textContent = `${rows.length} directions · ${ms}ms`;
+}
+
+tableToggleBtn.addEventListener('click', () => {
+  tablePanel.hidden = !tablePanel.hidden;
+  if (!tablePanel.hidden) computeTable();
+});
+tableCloseBtn.addEventListener('click', () => { tablePanel.hidden = true; });
+tableRecomputeBtn.addEventListener('click', computeTable);
+tableMaxYears.addEventListener('change', computeTable);
 
 resize();
 rebuild();

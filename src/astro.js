@@ -284,9 +284,14 @@ export function computeDirection(promissor, significator, natalDate, observer, r
     return altAzToXYZ(altitude, azimuth, radius);
   }
 
+  // Skippable — bulk table generation (computeAllDirections) needs the
+  // summary numbers for hundreds of combinations, not each one's rendered
+  // sweep path.
   const sweepPoints = [];
-  const STEPS = 60;
-  for (let i = 0; i <= STEPS; i++) sweepPoints.push(directedXYZ((i / STEPS) * arcYears));
+  if (!opts.skipSweep) {
+    const STEPS = 60;
+    for (let i = 0; i <= STEPS; i++) sweepPoints.push(directedXYZ((i / STEPS) * arcYears));
+  }
 
   return {
     movingKey: moving.key, fixedKey: fixed.key, swapped,
@@ -451,4 +456,57 @@ export function computeAspectPoint(aspectPlane, offsetDeg) {
   const { elon, elat } = cartesianToEcliptic(vec);
   const eq = eclipticPointToEquatorial(elon, elat, date);
   return { elon, elat, ra: eq.ra, dec: eq.dec };
+}
+
+// ── Full directions table ("Prognosis") ─────────────────────────────────────
+// Every promissor/significator/aspect combination the source material's own
+// software lists, sorted chronologically — not just the one currently
+// selected in the main panel.
+
+export const ASPECT_DEFS = [
+  { deg: 0, glyph: '☌', dir: null },
+  { deg: 60, glyph: '⚹', dir: 'sinister' }, { deg: -60, glyph: '⚹', dir: 'dexter' },
+  { deg: 90, glyph: '□', dir: 'sinister' }, { deg: -90, glyph: '□', dir: 'dexter' },
+  { deg: 120, glyph: '△', dir: 'sinister' }, { deg: -120, glyph: '△', dir: 'dexter' },
+  { deg: 180, glyph: '☍', dir: null }, // sinister/dexter coincide exactly at opposition
+];
+
+// pointKeys: the set of usable promissor/significator keys.
+// resolvePoint(key): key -> {key,body} or {key,ra,dec}, same shape computeDirection expects.
+// bodyOf(key): key -> astronomy-engine Body, or undefined/null for an angle
+//   (angles only get the plain-conjunction variant — their "aspect plane"
+//   would just be the ecliptic itself, elat is 0 by definition).
+export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate, observer, radius = 1, maxYears = 150) {
+  const rows = [];
+  for (const promissorKey of pointKeys) {
+    const body = bodyOf(promissorKey);
+    const basePoint = resolvePoint(promissorKey);
+    const aspectPlane = body ? computeAspectPlane(body, natalDate, observer, radius) : null;
+    const variants = body ? ASPECT_DEFS : [ASPECT_DEFS[0]];
+
+    for (const variant of variants) {
+      let promissorPoint = basePoint;
+      let promissorElon = aspectPlane ? aspectPlane.planetElon : null;
+      if (variant.deg !== 0) {
+        const aspectPoint = computeAspectPoint(aspectPlane, variant.deg);
+        promissorPoint = { key: promissorKey, ra: aspectPoint.ra, dec: aspectPoint.dec };
+        promissorElon = aspectPoint.elon;
+      }
+
+      for (const significatorKey of pointKeys) {
+        if (significatorKey === promissorKey) continue;
+        const significatorPoint = resolvePoint(significatorKey);
+        const direction = computeDirection(promissorPoint, significatorPoint, natalDate, observer, radius, { skipSweep: true });
+        if (direction.arcYears > maxYears) continue;
+        const date = new Date(natalDate.getTime() + direction.arcYears * 365.2422 * 86400000);
+        rows.push({
+          significatorKey, promissorKey, aspectGlyph: variant.glyph, aspectDir: variant.dir,
+          promissorElon, arcDeg: direction.arcDeg, arcYears: direction.arcYears,
+          swapped: direction.swapped, date,
+        });
+      }
+    }
+  }
+  rows.sort((a, b) => a.arcYears - b.arcYears);
+  return rows;
 }

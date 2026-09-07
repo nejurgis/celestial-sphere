@@ -56,6 +56,29 @@
       #direction-panel input[type=range] { flex: 1; }
       #direction-panel #direction-readout { font-size: 0.78rem; color: #333; white-space: nowrap; min-width: 210px; text-align: right; }
       #direction-panel.hit #direction-readout { color: #22c55e; font-weight: 700; }
+      .ghost-btn { background: transparent !important; color: #666 !important; border: 1px solid #ccc !important; font-weight: 600; padding: 5px 10px !important; width: auto !important; }
+      .ghost-btn:hover { background: #eee !important; }
+
+      #table-panel {
+        position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 20;
+        background: rgba(255,255,255,0.97); border: 1px solid #d8d8d8; border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
+        width: min(760px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+      }
+      .table-panel-header {
+        display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #e5e5e5;
+      }
+      .table-panel-header h2 { font-size: 0.9rem; margin: 0; flex: 1; }
+      .table-panel-header label { font-size: 0.78rem; color: #666; display: flex; align-items: center; gap: 5px; }
+      .table-panel-header input[type=number] { width: 60px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 6px; }
+      .table-panel-header button { padding: 6px 10px; border: none; border-radius: 6px; background: #2f6fb0; color: #fff; font-weight: 600; cursor: pointer; }
+      .table-scroll { overflow-y: auto; padding: 0 16px 16px; }
+      #table-panel table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+      #table-panel th { position: sticky; top: 0; background: #fff; text-align: left; padding: 8px 6px; border-bottom: 2px solid #ddd; color: #666; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+      #table-panel td { padding: 6px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+      #table-panel tr.type-c td:nth-child(5) { color: #a8321e; }
+      #table-panel tr.type-d td:nth-child(5) { color: #2f6fb0; }
+      #table-panel tr:hover td { background: #f7f9fc; }
 
       #layers-panel {
         position: absolute; top: 16px; right: 16px; z-index: 10;
@@ -170,6 +193,25 @@
           </select>
           <input id="dir-slider" type="range" min="0" max="1" step="0.01" value="0">
           <span id="direction-readout">—</span>
+          <button id="table-toggle-btn" type="button" class="ghost-btn" title="List every direction (all promissors, all significators, all aspects) chronologically">☰ Table</button>
+        </div>
+      </div>
+
+      <div id="table-panel" hidden>
+        <div class="table-panel-header">
+          <h2>Directions — chronological</h2>
+          <label>Max age <input id="table-max-years" type="number" value="150" min="1" max="1000" step="10"> yrs</label>
+          <button id="table-recompute-btn" type="button">Recompute</button>
+          <span id="table-status" class="muted"></span>
+          <button id="table-close-btn" type="button" class="ghost-btn">✕</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Sgnf.</th><th>Promissor</th><th>Position</th><th>Arc</th><th>Type</th><th>Age</th><th>Date</th></tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
         </div>
       </div>
     </div>
