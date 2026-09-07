@@ -10,6 +10,16 @@ import {
 } from './scene.js';
 
 const BODY_BY_KEY = Object.fromEntries(PLANETS.map(p => [p.key, p.body]));
+const ANGLE_KEYS = ['ASC', 'DSC', 'MC', 'IC'];
+
+// Resolves a dropdown key to a direction-capable point: a real planet
+// ({key, body}) or one of the four angles ({key, ra, dec}, pulled from the
+// already-computed sky state — angles aren't astronomy-engine bodies).
+function resolveDirectionPoint(key, state) {
+  if (BODY_BY_KEY[key]) return { key, body: BODY_BY_KEY[key] };
+  const angle = { ASC: state.asc, DSC: state.dsc, MC: state.mc, IC: state.ic }[key];
+  return angle ? { key, ra: angle.ra, dec: angle.dec } : null;
+}
 
 // ── Renderer / scene / camera ────────────────────────────────────────────
 
@@ -108,14 +118,22 @@ function rebuild() {
 
   const significatorKey = pathSelect.value;
   if (significatorKey) {
-    const body = BODY_BY_KEY[significatorKey];
-    const windowDays = PATH_WINDOW_DAYS[significatorKey] ?? 200;
-    const path = computePlanetPath(body, date, state.observer, windowDays, SPHERE_RADIUS);
-    skyGroup.add(buildPlanetPath(path, significatorKey));
+    // Real motion path only makes sense for an actual orbiting body — angles
+    // (ASC/DSC/MC/IC) aren't astronomy-engine bodies and have no loop of
+    // their own, so skip that part for them but still show a position circle.
+    if (BODY_BY_KEY[significatorKey]) {
+      const body = BODY_BY_KEY[significatorKey];
+      const windowDays = PATH_WINDOW_DAYS[significatorKey] ?? 200;
+      const path = computePlanetPath(body, date, state.observer, windowDays, SPHERE_RADIUS);
+      skyGroup.add(buildPlanetPath(path, significatorKey));
+    }
 
-    const focusPlanet = state.planets.find(p => p.key === significatorKey);
-    const posCircle = computePositionCircle(focusPlanet.ra, date, state.observer, SPHERE_RADIUS);
-    skyGroup.add(buildPositionCircle(posCircle, significatorKey));
+    const significatorPoint = resolveDirectionPoint(significatorKey, state);
+    if (significatorPoint) {
+      const eq = significatorPoint.body ? state.planets.find(p => p.key === significatorKey) : significatorPoint;
+      const posCircle = computePositionCircle(eq.ra, date, state.observer, SPHERE_RADIUS);
+      skyGroup.add(buildPositionCircle(posCircle, significatorKey));
+    }
   }
 
   const promissorKey = promissorSelect.value;
@@ -124,8 +142,8 @@ function rebuild() {
   directionYears = 0;
   if (significatorKey && promissorKey && significatorKey !== promissorKey) {
     direction = computeDirection(
-      { key: promissorKey, body: BODY_BY_KEY[promissorKey] },
-      { key: significatorKey, body: BODY_BY_KEY[significatorKey] },
+      resolveDirectionPoint(promissorKey, state),
+      resolveDirectionPoint(significatorKey, state),
       date, state.observer, SPHERE_RADIUS,
     );
     const { group, markerMesh, markerMaterial, label } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);

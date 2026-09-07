@@ -109,7 +109,10 @@ export function computeSkyState(date, latitude, longitude, radius = 1) {
 
     const eclEq = eclipticPointToEquatorial(t, 0, date);
     const { azimuth: ecAz, altitude: ecAlt } = horizonOf(date, observer, eclEq.ra, eclEq.dec);
-    eclipticPoints.push({ deg: t, azimuth: ecAz, altitude: ecAlt, xyz: altAzToXYZ(ecAlt, ecAz, radius) });
+    eclipticPoints.push({
+      deg: t, azimuth: ecAz, altitude: ecAlt, ra: eclEq.ra, dec: eclEq.dec,
+      xyz: altAzToXYZ(ecAlt, ecAz, radius),
+    });
   }
 
   // North celestial pole direction (Dec=90, RA irrelevant).
@@ -146,7 +149,10 @@ export function computeSkyState(date, latitude, longitude, radius = 1) {
   const horizonCrossings = crossingElons.map(elon => {
     const eclEq = eclipticPointToEquatorial(elon, 0, date);
     const { azimuth, altitude } = horizonOf(date, observer, eclEq.ra, eclEq.dec);
-    return { deg: ((elon % 360) + 360) % 360, azimuth, altitude, xyz: altAzToXYZ(altitude, azimuth, radius) };
+    return {
+      deg: ((elon % 360) + 360) % 360, azimuth, altitude, ra: eclEq.ra, dec: eclEq.dec,
+      xyz: altAzToXYZ(altitude, azimuth, radius),
+    };
   });
   const asc = horizonCrossings.find(c => c.azimuth > 0 && c.azimuth < 180) ?? null; // rising, east
   const dsc = horizonCrossings.find(c => c !== asc) ?? null; // setting, west
@@ -212,9 +218,18 @@ function forwardArcDeg(fromDeg, toDeg) {
 // held at its natal value throughout — diurnal rotation is a rotation about
 // the pole, so a real point's declination never changes as it turns; only
 // its RA-relative-to-the-horizon does.
+// point: { key, body } for a planet (RA/Dec looked up via equatorialOf), or
+// { key, ra, dec } for an angle (ASC/DSC/MC/IC — already computed, no body
+// to look up). Directing an angle is a standard technique in its own right
+// (directing the Ascendant to a promissor's aspect/conjunction is one of the
+// most common primary-direction methods), so angles work in either role.
+function resolveEquatorial(point, date, observer) {
+  return point.body ? equatorialOf(point.body, date, observer) : { ra: point.ra, dec: point.dec };
+}
+
 export function computeDirection(promissor, significator, natalDate, observer, radius = 1) {
-  const pEq = equatorialOf(promissor.body, natalDate, observer);
-  const sEq = equatorialOf(significator.body, natalDate, observer);
+  const pEq = resolveEquatorial(promissor, natalDate, observer);
+  const sEq = resolveEquatorial(significator, natalDate, observer);
   const pRAdeg = pEq.ra * 15;
   const sRAdeg = sEq.ra * 15;
 
