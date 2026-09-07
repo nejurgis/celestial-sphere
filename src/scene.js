@@ -34,6 +34,19 @@ function lineFromPoints(points, color, opts = {}) {
   return line;
 }
 
+// THREE.Line's linewidth is ignored on most platforms (a long-standing WebGL
+// limitation) — a real, camera-consistent thick line needs actual 3D tube
+// geometry instead.
+function tubeFromPoints(points, color, opts = {}) {
+  const curve = new THREE.CatmullRomCurve3(
+    points.map(([x, y, z]) => new THREE.Vector3(x, y, z)),
+    true,
+  );
+  const geom = new THREE.TubeGeometry(curve, points.length * 2, opts.radius ?? 0.025, 8, true);
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: opts.opacity ?? 1 });
+  return new THREE.Mesh(geom, mat);
+}
+
 function buildRibbon(innerPts, outerPts, color, opacity = 0.5) {
   const n = innerPts.length;
   const positions = [];
@@ -224,7 +237,7 @@ export function buildPlanetPath(pathResult, planetKey) {
 
 export function buildPositionCircle(result, planetKey) {
   const group = new THREE.Group();
-  group.add(lineFromPoints(result.points, POSITION_CIRCLE_COLOR, { opacity: 0.55 }));
+  group.add(tubeFromPoints(result.points, POSITION_CIRCLE_COLOR, { opacity: 0.6, radius: 0.03 }));
 
   const geom = new THREE.SphereGeometry(0.06, 12, 12);
   const mat = new THREE.MeshBasicMaterial({ color: POSITION_CIRCLE_COLOR });
@@ -244,7 +257,7 @@ export function buildPositionCircle(result, planetKey) {
 // to the ecliptic by its current-swing maximum latitude.
 export function buildAspectPlane(result, planetKey) {
   const group = new THREE.Group();
-  group.add(lineFromPoints(result.points, ASPECT_PLANE_COLOR, { opacity: 0.6 }));
+  group.add(tubeFromPoints(result.points, ASPECT_PLANE_COLOR, { opacity: 0.65, radius: 0.035 }));
 
   const label = makeTextSprite(`${planetKey} aspect plane (${result.inclinationDeg.toFixed(1)}°)`, {
     color: '#a89419', size: 24, scale: 0.17,
