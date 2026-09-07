@@ -153,3 +153,54 @@ export function computePositionCircle(raHours, date, observer, radius = 1, steps
   const mundane = horizonOf(date, observer, raHours, 0);
   return { points, mundaneXYZ: altAzToXYZ(mundane.altitude, mundane.azimuth, radius) };
 }
+
+// ── Primary directions (equatorial/"in mundo") ────────────────────────────
+// The promissor's directed position advances in RA at the rate of diurnal
+// (primary) motion; the significator's position circle — fixed RA — stays
+// put. Naibod's key converts degrees of that advance into years of life:
+// 360°/365.2422 days ≈ 0.9856°/year, the Sun's mean daily motion — the same
+// key the video names. If the forward arc exceeds 180°, promissor and
+// significator swap roles (a "converse" direction) rather than predicting
+// a 180+ year wait, per the video's own rule.
+export const NAIBOD_DEG_PER_YEAR = 360 / 365.2422;
+
+function forwardArcDeg(fromDeg, toDeg) {
+  return (((toDeg - fromDeg) % 360) + 360) % 360;
+}
+
+// promissor/significator: { key, body }. Declination of the moving point is
+// held at its natal value throughout — diurnal rotation is a rotation about
+// the pole, so a real point's declination never changes as it turns; only
+// its RA-relative-to-the-horizon does.
+export function computeDirection(promissor, significator, natalDate, observer, radius = 1) {
+  const pEq = equatorialOf(promissor.body, natalDate, observer);
+  const sEq = equatorialOf(significator.body, natalDate, observer);
+  const pRAdeg = pEq.ra * 15;
+  const sRAdeg = sEq.ra * 15;
+
+  const forward = forwardArcDeg(pRAdeg, sRAdeg);
+  const swapped = forward > 180;
+  const moving = swapped ? significator : promissor;
+  const fixed = swapped ? promissor : significator;
+  const movingEq = swapped ? sEq : pEq;
+  const movingRA0 = movingEq.ra * 15;
+  const movingDec = movingEq.dec;
+  const arcDeg = swapped ? forwardArcDeg(sRAdeg, pRAdeg) : forward;
+  const arcYears = arcDeg / NAIBOD_DEG_PER_YEAR;
+
+  function directedXYZ(tYears) {
+    const t = Math.max(0, Math.min(tYears, arcYears));
+    const raHours = (((movingRA0 + t * NAIBOD_DEG_PER_YEAR) % 360) + 360) % 360 / 15;
+    const { azimuth, altitude } = horizonOf(natalDate, observer, raHours, movingDec);
+    return altAzToXYZ(altitude, azimuth, radius);
+  }
+
+  const sweepPoints = [];
+  const STEPS = 60;
+  for (let i = 0; i <= STEPS; i++) sweepPoints.push(directedXYZ((i / STEPS) * arcYears));
+
+  return {
+    movingKey: moving.key, fixedKey: fixed.key, swapped,
+    arcDeg, arcYears, directedXYZ, sweepPoints,
+  };
+}

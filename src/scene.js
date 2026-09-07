@@ -15,6 +15,8 @@ const POLE_COLOR = 0x888888;
 const MC_COLOR = 0x2f9e44;
 const PATH_COLOR = 0xa8321e;
 const POSITION_CIRCLE_COLOR = 0x8b5cf6;
+const DIRECTION_COLOR = 0xe08a1e;
+const DIRECTION_HIT_COLOR = 0x22c55e;
 
 function lineFromPoints(points, color, opts = {}) {
   const geom = new THREE.BufferGeometry().setFromPoints(
@@ -180,6 +182,28 @@ export function buildPositionCircle(result, planetKey) {
 
   return group;
 }
+
+// Returns { group, markerMesh, markerMaterial, label } — main.js repositions
+// markerMesh and swaps markerMaterial.color every animation frame without
+// touching the rest of the scene.
+export function buildDirectionGroup(direction, movingLabel, fixedLabel) {
+  const group = new THREE.Group();
+
+  group.add(lineFromPoints(direction.sweepPoints, DIRECTION_COLOR, { dashed: true, opacity: 0.7 }));
+
+  const markerMaterial = new THREE.MeshBasicMaterial({ color: DIRECTION_COLOR });
+  const markerMesh = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), markerMaterial);
+  markerMesh.position.set(...direction.directedXYZ(0));
+  group.add(markerMesh);
+
+  const label = makeTextSprite(`${movingLabel} → ${fixedLabel}`, { color: '#e08a1e', size: 28, weight: '700', scale: 0.2 });
+  label.position.copy(markerMesh.position).multiplyScalar(1.12);
+  group.add(label);
+
+  return { group, markerMesh, markerMaterial, label };
+}
+
+export const DIRECTION_COLORS = { active: DIRECTION_COLOR, hit: DIRECTION_HIT_COLOR };
 
 export function buildSkyGroup(state) {
   const group = new THREE.Group();
