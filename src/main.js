@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { computeSkyState, computePlanetPath, PLANETS, PATH_WINDOW_DAYS } from './astro.js';
-import { buildSkyGroup, buildPlanetPath, SPHERE_RADIUS } from './scene.js';
+import { computeSkyState, computePlanetPath, computePositionCircle, PLANETS, PATH_WINDOW_DAYS } from './astro.js';
+import { buildSkyGroup, buildPlanetPath, buildPositionCircle, SPHERE_RADIUS } from './scene.js';
 
 const BODY_BY_KEY = Object.fromEntries(PLANETS.map(p => [p.key, p.body]));
 
@@ -58,6 +58,10 @@ function rebuild() {
     const windowDays = PATH_WINDOW_DAYS[pathKey] ?? 200;
     const path = computePlanetPath(body, date, state.observer, windowDays, SPHERE_RADIUS);
     skyGroup.add(buildPlanetPath(path, pathKey));
+
+    const focusPlanet = state.planets.find(p => p.key === pathKey);
+    const posCircle = computePositionCircle(focusPlanet.ra, date, state.observer, SPHERE_RADIUS);
+    skyGroup.add(buildPositionCircle(posCircle, pathKey));
   }
 
   scene.add(skyGroup);

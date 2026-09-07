@@ -133,3 +133,23 @@ export function computePlanetPath(body, date, observer, windowDays, radius = 1, 
   const maxLat = points.reduce((m, p) => (Math.abs(p.elat) > Math.abs(m.elat) ? p : m), points[0]);
   return { points, maxLat };
 }
+
+// A planet's circle of position: the great circle of constant right
+// ascension running from pole to pole through the planet (its "hour
+// circle"). Depends only on the planet's RA, not its declination — the
+// circle passes through the planet regardless of how far it sits from the
+// equator. Where this circle crosses the celestial equator (Dec=0) is the
+// planet's mundane position.
+export function computePositionCircle(raHours, date, observer, radius = 1, steps = 180) {
+  const points = [];
+  for (let i = 0; i <= steps * 2; i++) {
+    const phi = (i / (steps * 2)) * 360;
+    const onNearSide = phi <= 180;
+    const dec = onNearSide ? phi - 90 : 270 - phi;
+    const ra = onNearSide ? raHours : (raHours + 12) % 24;
+    const { azimuth, altitude } = horizonOf(date, observer, ra, dec);
+    points.push(altAzToXYZ(altitude, azimuth, radius));
+  }
+  const mundane = horizonOf(date, observer, raHours, 0);
+  return { points, mundaneXYZ: altAzToXYZ(mundane.altitude, mundane.azimuth, radius) };
+}

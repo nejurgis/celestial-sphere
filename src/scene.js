@@ -14,6 +14,7 @@ const HORIZON_COLOR = 0xffffff;
 const POLE_COLOR = 0x888888;
 const MC_COLOR = 0x2f9e44;
 const PATH_COLOR = 0xa8321e;
+const POSITION_CIRCLE_COLOR = 0x8b5cf6;
 
 function lineFromPoints(points, color, opts = {}) {
   const geom = new THREE.BufferGeometry().setFromPoints(
@@ -157,6 +158,24 @@ export function buildPlanetPath(pathResult, planetKey) {
     color: '#a8321e', size: 26, scale: 0.18,
   });
   label.position.set(peak.xyz[0] * 1.08, peak.xyz[1] * 1.08 + 0.15, peak.xyz[2] * 1.08);
+  group.add(label);
+
+  return group;
+}
+
+export function buildPositionCircle(result, planetKey) {
+  const group = new THREE.Group();
+  group.add(lineFromPoints(result.points, POSITION_CIRCLE_COLOR, { opacity: 0.55 }));
+
+  const geom = new THREE.SphereGeometry(0.06, 12, 12);
+  const mat = new THREE.MeshBasicMaterial({ color: POSITION_CIRCLE_COLOR });
+  const marker = new THREE.Mesh(geom, mat);
+  marker.position.set(...result.mundaneXYZ);
+  group.add(marker);
+
+  const label = makeTextSprite(`${planetKey} mundane pos.`, { color: '#8b5cf6', size: 26, scale: 0.18 });
+  const [x, y, z] = result.mundaneXYZ;
+  label.position.set(x * 1.08, y * 1.08 + 0.15, z * 1.08);
   group.add(label);
 
   return group;
