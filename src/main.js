@@ -379,14 +379,34 @@ function computeTable() {
   // general astrological convention, not part of Morinus's own system
   // (which doesn't rate directions by nature). Conjunction is left neutral:
   // its nature depends on which planets are involved, not knowable generically.
-  const NATURE = { '⚹': 'nature-easy', '△': 'nature-easy', '□': 'nature-hard', '☍': 'nature-hard' };
+  const ASPECT_NATURE = { '⚹': 'nature-easy', '△': 'nature-easy', '□': 'nature-hard', '☍': 'nature-hard' };
+  // Traditional benefic/malefic classification of the promissor planet,
+  // layered on top of the aspect-based coloring above (used as a fallback
+  // for Sun/Moon/Mercury/angle promissors, which this classification
+  // doesn't cover). Mars/Saturn's malefic default is mitigated two ways:
+  // dignity (their own sign or exaltation) or a harmonious aspect
+  // (sextile/trine) softening the same way it does for any other promissor.
+  const MARS_DIGNITY_SIGNS = [0, 7, 9];   // Aries, Scorpio, Capricorn (exaltation)
+  const SATURN_DIGNITY_SIGNS = [10, 9, 6]; // Aquarius, Capricorn, Libra (exaltation)
+
+  function rowNatureClass(r) {
+    if (r.promissorKey === 'Venus' || r.promissorKey === 'Jupiter') return 'nature-easy';
+    if (r.promissorKey === 'Mars' || r.promissorKey === 'Saturn') {
+      const dignitySigns = r.promissorKey === 'Mars' ? MARS_DIGNITY_SIGNS : SATURN_DIGNITY_SIGNS;
+      const signIndex = r.promissorElon != null ? Math.floor((((r.promissorElon % 360) + 360) % 360) / 30) : -1;
+      if (dignitySigns.includes(signIndex)) return ''; // dignified — mitigated, neutral
+      if (ASPECT_NATURE[r.aspectGlyph] === 'nature-easy') return 'nature-easy'; // soft aspect softens it too
+      return 'nature-hard';
+    }
+    return ASPECT_NATURE[r.aspectGlyph] ?? '';
+  }
 
   tableBody.innerHTML = rows.map(r => {
     const promissorLabel = pointLabel(r.promissorKey) + (r.aspectGlyph !== '☌' ? r.aspectGlyph : '') + (r.aspectDir ? (r.aspectDir === 'dexter' ? ' (dex)' : '') : '');
     const position = r.promissorElon != null ? formatEclipticDegree(r.promissorElon) : '—';
     const type = r.swapped ? 'C' : 'D';
     const dateStr = r.date.toISOString().slice(0, 10);
-    const natureClass = NATURE[r.aspectGlyph] ?? '';
+    const natureClass = rowNatureClass(r);
     return `<tr class="type-${type.toLowerCase()} ${natureClass}">
       <td>${pointLabel(r.significatorKey)}</td>
       <td>${promissorLabel}</td>
