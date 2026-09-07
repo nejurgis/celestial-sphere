@@ -12,7 +12,8 @@ const EQUATOR_COLOR = 0x2f6fb0;
 const ECLIPTIC_COLOR = 0x2f9e44;
 const HORIZON_COLOR = 0xffffff;
 const POLE_COLOR = 0x888888;
-const MC_COLOR = 0x2f9e44;
+const MERIDIAN_AXIS_COLOR = 0xd4a017;   // MC / IC
+const HORIZON_AXIS_COLOR = 0x0e8a94;    // ASC / DSC
 const PATH_COLOR = 0xa8321e;
 const POSITION_CIRCLE_COLOR = 0x8b5cf6;
 const DIRECTION_COLOR = 0xe08a1e;
@@ -127,17 +128,17 @@ function buildPlanets(planets) {
   return group;
 }
 
-function buildMidheaven(mc) {
+function buildAngleMarker(point, label, color, hexColor) {
   const group = new THREE.Group();
   const geom = new THREE.SphereGeometry(0.08, 16, 16);
-  const mat = new THREE.MeshBasicMaterial({ color: MC_COLOR });
+  const mat = new THREE.MeshBasicMaterial({ color });
   const marker = new THREE.Mesh(geom, mat);
-  marker.position.set(...mc.xyz);
+  marker.position.set(...point.xyz);
   group.add(marker);
 
-  const label = makeTextSprite('MP', { color: '#2f9e44', size: 32, weight: '700', scale: 0.22 });
-  label.position.set(mc.xyz[0] * 1.1, mc.xyz[1] * 1.1 + 0.2, mc.xyz[2] * 1.1);
-  group.add(label);
+  const text = makeTextSprite(label, { color: hexColor, size: 32, weight: '700', scale: 0.22 });
+  text.position.set(point.xyz[0] * 1.1, point.xyz[1] * 1.1 + 0.2, point.xyz[2] * 1.1);
+  group.add(text);
   return group;
 }
 
@@ -213,7 +214,10 @@ export function buildSkyGroup(state) {
   group.add(buildGreatCircle(state.eclipticPoints, ECLIPTIC_COLOR, { labelColor: '#2f9e44' }));
   group.add(buildPoleAxis(state.poleXYZ));
   group.add(buildPlanets(state.planets));
-  group.add(buildMidheaven(state.mc));
+  group.add(buildAngleMarker(state.mc, 'MC', MERIDIAN_AXIS_COLOR, '#a8790f'));
+  group.add(buildAngleMarker(state.ic, 'IC', MERIDIAN_AXIS_COLOR, '#a8790f'));
+  if (state.asc) group.add(buildAngleMarker(state.asc, 'ASC', HORIZON_AXIS_COLOR, '#0e8a94'));
+  if (state.dsc) group.add(buildAngleMarker(state.dsc, 'DSC', HORIZON_AXIS_COLOR, '#0e8a94'));
   return group;
 }
 

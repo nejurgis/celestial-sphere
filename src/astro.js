@@ -101,17 +101,42 @@ export function computeSkyState(date, latitude, longitude, radius = 1) {
   const poleHorizon = horizonOf(date, observer, 0, 90);
   const poleXYZ = altAzToXYZ(poleHorizon.altitude, poleHorizon.azimuth, radius);
 
-  // Midheaven: the ecliptic-circle sample nearest the meridian (az≈0 or az≈180)
-  // on whichever side is currently above the horizon at the greater altitude —
-  // numerically located from the sampled points rather than a closed-form
-  // formula, since we already have the full sampled circle.
+  // The four angles — Midheaven/Imum Coeli (meridian crossings of the
+  // ecliptic) and Ascendant/Descendant (horizon crossings) — located
+  // numerically from the sampled ecliptic circle rather than closed-form
+  // trig, since we already have the full sampled circle to hand.
   const angDist = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
-  const mcCandidates = eclipticPoints
-    .map(p => ({ ...p, distToMeridian: Math.min(angDist(p.azimuth, 0), angDist(p.azimuth, 180)) }))
-    .sort((a, b) => a.distToMeridian - b.distToMeridian);
-  const mc = mcCandidates.find(c => c.altitude > 0) ?? mcCandidates[0];
 
-  return { observer, planets, equatorPoints, eclipticPoints, poleXYZ, mc };
+  // MC/IC: the two points nearest az=0 and az=180 (the meridian, at any
+  // altitude) — a great circle crosses another great circle at exactly two
+  // antipodal points, so "nearest az=0" and "nearest az=180" are exactly
+  // those two crossings. Whichever is higher is MC (upper culmination).
+  const byAz0 = [...eclipticPoints].sort((a, b) => angDist(a.azimuth, 0) - angDist(b.azimuth, 0))[0];
+  const byAz180 = [...eclipticPoints].sort((a, b) => angDist(a.azimuth, 180) - angDist(b.azimuth, 180))[0];
+  const mc = byAz0.altitude > byAz180.altitude ? byAz0 : byAz180;
+  const ic = mc === byAz0 ? byAz180 : byAz0;
+
+  // ASC/DSC: interpolate the ecliptic-longitude where altitude crosses zero
+  // between consecutive samples, then recompute that exact point through
+  // the real pipeline (not interpolated xyz/azimuth — only elon is
+  // estimated by interpolation, everything else is exact for that elon).
+  const crossingElons = [];
+  for (let i = 0; i < eclipticPoints.length - 1; i++) {
+    const a = eclipticPoints[i], b = eclipticPoints[i + 1];
+    if ((a.altitude >= 0) !== (b.altitude >= 0)) {
+      const frac = a.altitude / (a.altitude - b.altitude);
+      crossingElons.push(a.deg + frac * (b.deg - a.deg));
+    }
+  }
+  const horizonCrossings = crossingElons.map(elon => {
+    const eclEq = eclipticPointToEquatorial(elon, 0, date);
+    const { azimuth, altitude } = horizonOf(date, observer, eclEq.ra, eclEq.dec);
+    return { deg: ((elon % 360) + 360) % 360, azimuth, altitude, xyz: altAzToXYZ(altitude, azimuth, radius) };
+  });
+  const asc = horizonCrossings.find(c => c.azimuth > 0 && c.azimuth < 180) ?? null; // rising, east
+  const dsc = horizonCrossings.find(c => c !== asc) ?? null; // setting, west
+
+  return { observer, planets, equatorPoints, eclipticPoints, poleXYZ, mc, ic, asc, dsc };
 }
 
 // A planet's real path across the sky over `windowDays` centered on `date`
