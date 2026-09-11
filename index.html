@@ -10,7 +10,55 @@
       html, body { margin: 0; height: 100%; background: #f4f6f9; font: 14px/1.4 -apple-system, system-ui, sans-serif; color: #222; overflow: hidden; }
       #app { position: relative; width: 100vw; height: 100vh; }
       #viewport { position: absolute; inset: 0; }
-      #scene { width: 100%; height: 100%; display: block; }
+      /* position:absolute (not just static) is load-bearing here: CSS paints
+         positioned boxes above non-positioned in-flow ones regardless of DOM
+         order, so without this, #stel-bg (positioned) would sit ON TOP of
+         #scene once visible, despite coming first in the HTML — invisible
+         until #stel-bg is shown, then it silently eats every mouse event. */
+      #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      /* Stellarium background layer (Option A) — sits behind #scene, which
+         renders transparent (renderer alpha:true) over it in center view. */
+      #stel-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #000; }
+
+      /* Stellarium layer toggle bar — same icons + dark semi-transparent
+         look as stellarium-web-engine's own apps/simple-html demo footer
+         (v-footer + stel-button, Vuetify dark theme); reimplemented here in
+         plain HTML/CSS since this app doesn't use Vue. Only shown/usable in
+         center view, where Stellarium actually renders. */
+      #stellarium-bar {
+        /* bottom-right, not bottom-center — #direction-panel already owns
+           bottom-center (bottom:16px, left:50%) and can be visible at the
+           same time as this (center view + primary directions both on). */
+        position: absolute; bottom: 16px; right: 16px; z-index: 10;
+        display: none; gap: 6px; background: rgba(20,20,24,0.55); border-radius: 12px;
+        padding: 8px; backdrop-filter: blur(6px);
+      }
+      #stellarium-bar.visible { display: flex; }
+      #stellarium-bar button {
+        position: relative;
+        width: 3rem; height: 3rem; border: none; border-radius: 8px; background: transparent;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+        opacity: 0.5; transition: opacity 0.15s, background 0.15s;
+      }
+      #stellarium-bar button:hover { background: rgba(255,255,255,0.1); }
+      #stellarium-bar button.active { opacity: 1; background: rgba(255,255,255,0.15); }
+      #stellarium-bar button img { width: 1.5rem; height: 1.5rem; }
+      #stellarium-bar button.emoji { font-size: 1.3rem; }
+      /* cst-art/cst-lines/atmosphere only mean anything where Stellarium's
+         real background actually renders (center view — see
+         updateStellariumBgVisibility in main.js) — hidden in outside view
+         rather than sitting there inert. Toggled via .center-view on the
+         bar itself (setCenterView), not a view-mode attribute per button. */
+      #stellarium-bar:not(.center-view) .center-only { display: none; }
+      /* Stellarium's own demo footer tooltip look: small dark bubble above
+         the icon on hover, not the browser's native title tooltip. */
+      #stellarium-bar button::after {
+        content: attr(data-tip); position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%);
+        background: rgba(20,20,24,0.92); color: #fff; padding: 4px 9px; border-radius: 6px;
+        font-size: 0.72rem; font-weight: 500; white-space: nowrap;
+        opacity: 0; pointer-events: none; transition: opacity 0.1s; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      }
+      #stellarium-bar button:hover::after { opacity: 1; }
 
       #panel {
         position: absolute; top: 16px; left: 16px; z-index: 10;
@@ -30,12 +78,43 @@
         font-weight: 600; cursor: pointer;
       }
       #panel button:hover { background: #275c92; }
+      /* Real calendar-date stepper — same transport look as
+         #direction-panel's own (⏮◀▶⏭ + step-size select), just scoped for
+         #panel's narrower column instead of duplicating the button visuals
+         under a #direction-panel-only selector. */
+      #panel .date-transport { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+      #panel .date-transport button {
+        margin: 0; padding: 0; border: none; border-radius: 6px; background: #eee; color: #333;
+        width: 30px; height: 26px; cursor: pointer; font-size: 0.9rem; font-weight: 400;
+        display: flex; align-items: center; justify-content: center;
+      }
+      #panel .date-transport button:hover { background: #ddd; }
+      #panel .date-transport button.play { background: #2f6fb0; color: #fff; width: 40px; }
+      #panel .date-transport button.play:hover { background: #275c92; }
+      #panel .date-transport select { flex: 1; padding: 4px 6px; }
+      #panel .date-speed { margin-top: -2px; }
+      #panel .date-speed button { width: 24px; height: 22px; font-size: 0.85rem; font-weight: 700; }
+      #panel .date-speed #date-step-rate { font-size: 0.78rem; color: #333; min-width: 2.4em; text-align: center; }
 
       #legend {
         position: absolute; bottom: 16px; left: 16px; z-index: 10; font-size: 0.75rem; color: #555;
         background: rgba(255,255,255,0.85); border-radius: 8px; padding: 8px 12px; line-height: 1.7;
       }
       #legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+      #legend .help, #panel .help {
+        position: relative; display: inline-flex; align-items: center; justify-content: center;
+        width: 13px; height: 13px; border-radius: 50%; background: #d8dde3; color: #666;
+        font-size: 0.65rem; font-weight: 700; cursor: help; margin-left: 4px; vertical-align: middle;
+      }
+      #legend .help:hover, #panel .help:hover { background: #2f6fb0; color: #fff; }
+      #legend .help::after, #panel .help::after {
+        content: attr(data-tip); position: absolute; bottom: 130%; left: 0;
+        width: 240px; max-width: 60vw; background: #222; color: #fff; padding: 8px 10px; border-radius: 8px;
+        font-size: 0.72rem; font-weight: 400; line-height: 1.4;
+        white-space: normal; box-shadow: 0 4px 16px rgba(0,0,0,0.25); z-index: 999;
+        opacity: 0; pointer-events: none; transition: opacity 0.1s;
+      }
+      #legend .help:hover::after, #panel .help:hover::after { opacity: 1; }
 
       #direction-panel {
         position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
@@ -43,6 +122,7 @@
         padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); backdrop-filter: blur(6px);
         display: flex; flex-direction: column; gap: 8px; min-width: 470px;
       }
+      #direction-panel[hidden] { display: none; }
       #direction-panel .row1 { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: #555; }
       #direction-panel select { font: inherit; padding: 4px 6px; border: 1px solid #ddd; border-radius: 6px; }
       #direction-panel .transport { display: flex; align-items: center; gap: 6px; }
@@ -51,9 +131,17 @@
         cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; justify-content: center;
       }
       #direction-panel .transport button:hover { background: #ddd; }
+      #direction-panel[hidden] { display: none; }
       #direction-panel .transport button.play { background: #e08a1e; color: #fff; width: 44px; }
       #direction-panel .transport button.play:hover { background: #c8770f; }
       #direction-panel input[type=range] { flex: 1; }
+      .bound-crossings { display: flex; gap: 6px; flex-wrap: wrap; font-size: 0.7rem; }
+      .bound-crossings .crossing {
+        background: #f0eefa; color: #5a3fa0; border: 1px solid #ddd6f5; border-radius: 10px;
+        padding: 2px 7px; cursor: pointer; white-space: nowrap;
+      }
+      .bound-crossings .crossing:hover { background: #e4dffa; }
+      .bound-crossings .crossing.passed { background: #eee; color: #999; border-color: #e2e2e2; }
       #direction-panel #direction-readout { font-size: 0.78rem; color: #333; white-space: nowrap; min-width: 210px; text-align: right; }
       #direction-panel.hit #direction-readout { color: #22c55e; font-weight: 700; }
       .ghost-btn { background: transparent !important; color: #666 !important; border: 1px solid #ccc !important; font-weight: 600; padding: 5px 10px !important; width: auto !important; }
@@ -97,6 +185,8 @@
       #table-panel td { padding: 6px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
       #table-panel tr.type-c td:nth-child(5) { color: #a8321e; }
       #table-panel tr.type-d td:nth-child(5) { color: #2f6fb0; }
+      #table-panel tr.type-b { color: #5a3fa0; }
+      #table-panel tr.type-b td:nth-child(5) { color: #5a3fa0; font-weight: 700; }
       #table-panel tr.nature-easy td { background: rgba(34, 197, 94, 0.12); }
       #table-panel tr.nature-hard td { background: rgba(220, 38, 38, 0.12); }
       #table-panel tr:hover td { background: #f7f9fc; }
@@ -107,25 +197,71 @@
         padding: 12px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); backdrop-filter: blur(6px);
         display: flex; flex-direction: column; gap: 5px; min-width: 170px;
       }
+      #layers-panel[hidden] { display: none; }
       #layers-panel h2 { font-size: 0.8rem; margin: 0 0 4px; color: #666; text-transform: uppercase; letter-spacing: 0.03em; }
       #layers-panel label { display: flex; align-items: center; gap: 7px; font-size: 0.82rem; cursor: pointer; }
+      /* Explicit display:flex above (0-1-1) otherwise beats the browser's
+         default [hidden]{display:none} (0-1-0) — same class of bug as
+         #table-panel[hidden]/#direction-panel[hidden] elsewhere in this file. */
+      #layers-panel label[hidden] { display: none; }
       #layers-panel input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; }
       #layers-panel button {
         margin-top: 6px; padding-top: 8px; border: none; border-top: 1px solid #e5e5e5; border-radius: 0;
         background: transparent; color: #2f6fb0; font-weight: 600; font-size: 0.82rem; cursor: pointer; text-align: left;
       }
       #layers-panel button:hover { color: #1d4d80; }
+
+      #chart2d-panel {
+        position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 20;
+        background: rgba(255,255,255,0.97); border: 1px solid #d8d8d8; border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
+        display: flex; flex-direction: column;
+      }
+      #chart2d-panel[hidden] { display: none; }
+      .chart2d-body { padding: 4px 16px 16px; display: flex; justify-content: center; }
+      #chart2d-svg { width: 480px; height: 480px; user-select: none; -webkit-user-select: none; }
     </style>
   </head>
   <body>
     <div id="app">
-      <div id="viewport"><canvas id="scene"></canvas></div>
+      <div id="viewport"><canvas id="stel-bg"></canvas><canvas id="scene"></canvas></div>
+
+      <div id="stellarium-bar">
+        <button id="stel-btn-cst-art" type="button" class="center-only" data-tip="Constellation art"><img src="/stellarium/icons/btn-cst-art.svg" alt="Constellation art"></button>
+        <button id="stel-btn-cst-lines" type="button" class="center-only" data-tip="Constellations"><img src="/stellarium/icons/btn-cst-lines.svg" alt="Constellations"></button>
+        <button id="stel-btn-atmosphere" type="button" class="center-only" data-tip="Atmosphere"><img src="/stellarium/icons/btn-atmosphere.svg" alt="Atmosphere"></button>
+        <button id="stel-btn-azimuthal" type="button" data-tip="Azimuthal grid"><img src="/stellarium/icons/btn-azimuthal-grid.svg" alt="Azimuthal grid"></button>
+        <button id="stel-btn-equatorial" type="button" data-tip="Equatorial grid"><img src="/stellarium/icons/btn-equatorial-grid.svg" alt="Equatorial grid"></button>
+        <button id="stel-btn-fullscreen" type="button" class="emoji" data-tip="Fullscreen">⛶</button>
+      </div>
 
       <div id="panel">
         <h1>⊹ Celestial Sphere</h1>
+        <label style="flex-direction: row; align-items: center; gap: 7px; font-size: 0.82rem; color: #222;">
+          <input type="checkbox" id="primary-directions-toggle" style="width: 15px; height: 15px;">
+          Primary directions
+          <span class="help" data-tip="A classical astrological forecasting technique: a promissor point (planet or angle) is 'directed' — swept forward along the celestial equator — until it reaches an aspect to a significator, converting the arc into years via the Naibod key. Turns on the directional arc, position circle, and Morinus aspect plane, plus the transport panel at the bottom.">?</span>
+        </label>
         <label>Date &amp; time (local)
           <input id="date-input" type="datetime-local">
         </label>
+        <div class="date-transport">
+          <button id="date-step-back" type="button" title="Step back one interval">◀</button>
+          <button id="date-play" class="play" type="button" title="Play/Pause">▶</button>
+          <button id="date-step-fwd" type="button" title="Step forward one interval">▶</button>
+          <select id="date-step-unit" title="Time step interval — also sets what ◀/▶ step by">
+            <option value="minute">1 Minute</option>
+            <option value="hour">1 Hour</option>
+            <option value="day" selected>1 Day</option>
+            <option value="week">1 Week</option>
+          </select>
+        </div>
+        <div class="date-transport date-speed">
+          <button id="date-step-slower" type="button" title="Slower">−</button>
+          <span id="date-step-rate">1×</span>
+          <button id="date-step-faster" type="button" title="Faster">+</button>
+          <span style="font-size: 0.72rem; color: #888; margin-left: auto;">Play speed</span>
+        </div>
         <div class="row">
           <label>Latitude
             <input id="lat-input" type="number" step="0.01" min="-90" max="90">
@@ -135,6 +271,16 @@
           </label>
         </div>
         <button id="now-btn" type="button">Now</button>
+        <div class="row" style="align-items: center; margin-top: 4px;">
+          <button id="day-rotate-btn" type="button" class="ghost-btn" title="Animate the whole sky rotating through a full day (sidereal) from the natal moment">▶ Rotate day</button>
+          <span id="day-rotation-readout" style="font-size: 0.75rem; color: #666; margin-left: auto;">0.0h</span>
+        </div>
+        <div style="font-size: 0.72rem; color: #0e8a94;" title="The real ascendant at this rotated moment — recomputed live, unlike the frozen ASC marker in the 3D scene (which stays at its natal position, correct for primary directions but not for a day's real rotation)">
+          Current ASC: <span id="day-rotation-asc">—</span>
+        </div>
+        <input id="day-rotation-slider" type="range" min="0" max="360" step="0.5" value="0" title="Scrub through the day manually (hours past the natal moment)">
+        <button id="center-view-btn" type="button" class="ghost-btn" style="margin-top: 4px;" title="Switch between the outside orbit view and a first-person view from the observer's own position at the center — Stellarium's real sky loads automatically here">🎯 View from center</button>
+        <button id="focus-mode-btn" type="button" class="ghost-btn" style="margin-top: 4px;" title="Hide every other panel to declutter the view">▭ Focus mode</button>
       </div>
 
       <div id="layers-panel">
@@ -143,29 +289,37 @@
         <label><input type="checkbox" id="layer-ecliptic" checked> Ecliptic line</label>
         <label><input type="checkbox" id="layer-planets" checked> Planets</label>
         <label><input type="checkbox" id="layer-zodiacBand" checked> Zodiac band + glyphs</label>
-        <label><input type="checkbox" id="layer-zodiacNames" checked> Zodiac names</label>
+        <label><input type="checkbox" id="layer-zodiacNames"> Zodiac names</label>
         <label><input type="checkbox" id="layer-angles" checked> Angles (MC/IC/ASC/DSC)</label>
         <label><input type="checkbox" id="layer-degrees"> Show degrees</label>
-        <label><input type="checkbox" id="layer-aspectPlane" checked> Aspect plane (Morinus)</label>
-        <button id="table-toggle-btn" type="button" title="List every direction (all promissors, all significators, all aspects) chronologically">☰ Directions table</button>
+        <label class="primary-directions-only"><input type="checkbox" id="layer-aspectPlane" checked> Aspect plane (Morinus)</label>
+        <label class="primary-directions-only"><input type="checkbox" id="layer-path" checked> Selected planet's path</label>
+        <label class="primary-directions-only"><input type="checkbox" id="layer-positionCircle" checked> Selected mundane position</label>
+        <label class="primary-directions-only"><input type="checkbox" id="layer-direction" checked> Directional arc</label>
+        <button id="table-toggle-btn" type="button" class="primary-directions-only" title="List every direction (all promissors, all significators, all aspects) chronologically">☰ Directions table</button>
+        <button id="chart2d-toggle-btn" type="button" title="Traditional 2D chart wheel">◐ 2D chart</button>
       </div>
 
       <div id="legend">
-        <div data-layer="ecliptic"><span class="dot" style="background:#2f9e44"></span>Ecliptic (zodiac circle)</div>
-        <div data-layer="zodiacBand"><span class="dot" style="background:#d9633b"></span>Zodiac band (fire/earth/air/water)</div>
-        <div data-layer="angles"><span class="dot" style="background:#d4a017"></span>MC / IC (meridian angles)</div>
-        <div data-layer="angles"><span class="dot" style="background:#0e8a94"></span>ASC / DSC (horizon angles)</div>
-        <div data-layer="equator"><span class="dot" style="background:#2f6fb0"></span>Celestial equator</div>
-        <div data-layer="planets"><span class="dot" style="background:#d23b3b"></span>Planets</div>
-        <div data-layer="path"><span class="dot" style="background:#a8321e"></span>Planet's real path (loop)</div>
-        <div data-layer="positionCircle"><span class="dot" style="background:#8b5cf6"></span>Position circle + mundane position</div>
-        <div data-layer="aspectPlane"><span class="dot" style="background:#d4c419"></span>Aspect plane (Morinus)</div>
-        <div data-layer="direction"><span class="dot" style="background:#e08a1e"></span>Directional arc (promissor → significator)</div>
+        <div data-layer="ecliptic"><span class="dot" style="background:#2f9e44"></span>Ecliptic (zodiac circle)<span class="help" data-tip="The Sun's apparent yearly path against the stars — the plane the 12 zodiac signs are measured along. Everything's ecliptic longitude (elon) is a position on this circle.">?</span></div>
+        <div data-layer="zodiacBand"><span class="dot" style="background:#d9633b"></span>Zodiac band (fire/earth/air/water)<span class="help" data-tip="The 12 signs as a ribbon straddling the ecliptic, tinted by classical element. Purely a visual aid — same circle as the ecliptic line, just given width and labels.">?</span></div>
+        <div data-layer="angles"><span class="dot" style="background:#d4a017"></span>MC / IC (meridian angles)<span class="help" data-tip="Where the ecliptic crosses your local meridian. MC (Midheaven) = upper culmination, the highest point a planet reaches. IC (Imum Coeli) = lower culmination, its antipodal opposite. Both are house cusps 10 and 4.">?</span></div>
+        <div data-layer="angles"><span class="dot" style="background:#0e8a94"></span>ASC / DSC (horizon angles)<span class="help" data-tip="Where the ecliptic crosses your local horizon. ASC (Ascendant) = the rising point, house cusp 1. DSC (Descendant) = the setting point, house cusp 7 — always exactly opposite the ASC.">?</span></div>
+        <div data-layer="equator"><span class="dot" style="background:#2f6fb0"></span>Celestial equator<span class="help" data-tip="Earth's equator projected onto the sky. The reference circle for Right Ascension and Hour Angle — the coordinates primary directions are actually computed in, not ecliptic longitude.">?</span></div>
+        <div data-layer="planets"><span class="dot" style="background:#d23b3b"></span>Planets<span class="help" data-tip="Real positions of Sun, Moon, Mercury, Venus, Mars, Jupiter and Saturn for the date, time and location entered above — from astronomy-engine, not approximated.">?</span></div>
+        <div data-layer="path"><span class="dot" style="background:#a8321e"></span>Planet's real path (loop)<span class="help" data-tip="The selected significator's actual apparent motion over a window of real time (including any retrograde loop), projected into today's fixed sky orientation — a snapshot of motion, not a live animation.">?</span></div>
+        <div data-layer="positionCircle"><span class="dot" style="background:#8b5cf6"></span>Position circle + mundane position<span class="help" data-tip="The significator's 'circle of position' — the great circle of constant Right Ascension running pole to pole through it. A promissor directs toward wherever this circle crosses the celestial equator (the purple marker), per the Morinus/circle-of-position method.">?</span></div>
+        <div data-layer="aspectPlane"><span class="dot" style="background:#d4c419"></span>Aspect plane (Morinus)<span class="help" data-tip="Morinus's own refinement: aspects (60/90/120/180°) are cast on a plane tilted through the planet's current position and its own maximum-latitude point in its current node-to-node swing — not the flat ecliptic.">?</span></div>
+        <div data-layer="direction"><span class="dot" style="background:#e08a1e"></span>Directional arc (promissor → significator)<span class="help" data-tip="The swept path of primary motion from the promissor to the significator's position circle. Its length in degrees converts to years via the Naibod key (~0.9856°/year, the Sun's mean daily motion).">?</span></div>
         <div>Drag to rotate · scroll to zoom</div>
       </div>
 
       <div id="direction-panel">
         <div class="row1">
+          <select id="system-select" title="Regiomontanus: circle-of-position (RA difference). Placidus: semi-arc (mundo fraction of the diurnal/nocturnal semicircle) — MC/IC directions match Regiomontanus, ASC/DSC directions can diverge by years.">
+            <option value="regiomontanus" selected>Regiomontanus</option>
+            <option value="placidus">Placidus</option>
+          </select>
           <span>Direct</span>
           <select id="promissor-select">
             <option value="">— off —</option>
@@ -219,6 +373,23 @@
           <input id="dir-slider" type="range" min="0" max="1" step="0.01" value="0">
           <span id="direction-readout">—</span>
         </div>
+        <div class="bound-crossings" id="bound-crossings"></div>
+      </div>
+
+      <div id="chart2d-panel" hidden>
+        <div class="table-panel-header">
+          <h2>2D Chart</h2>
+          <label><input type="checkbox" id="chart2d-houses" checked> Houses</label>
+          <select id="chart2d-house-system" title="Regiomontanus: quadrant system from the equator/RAMC. Whole sign: house 1 is simply the Ascendant's whole zodiac sign, each next house the next whole sign — no equator math at all.">
+            <option value="regiomontanus" selected>Regiomontanus</option>
+            <option value="whole-sign">Whole sign</option>
+          </select>
+          <label><input type="checkbox" id="chart2d-bounds" checked> Egyptian bounds</label>
+          <button id="chart2d-close-btn" type="button" class="ghost-btn">✕</button>
+        </div>
+        <div class="chart2d-body">
+          <svg id="chart2d-svg" viewBox="-20 -20 540 540"></svg>
+        </div>
       </div>
 
       <div id="table-panel" hidden>
@@ -226,6 +397,11 @@
           <h2>Directions — chronological</h2>
           <label>Min age <input id="table-min-years" type="number" value="0" min="0" max="1000" step="10"> yrs</label>
           <label>Max age <input id="table-max-years" type="number" value="150" min="1" max="1000" step="10"> yrs</label>
+          <label><input id="table-bounds" type="checkbox" checked> Bound changes</label>
+          <select id="table-system" title="Regiomontanus: circle-of-position (RA difference). Placidus: semi-arc — ASC/DSC directions can diverge by years.">
+            <option value="regiomontanus" selected>Regiomontanus</option>
+            <option value="placidus">Placidus</option>
+          </select>
           <button id="table-recompute-btn" type="button">Recompute</button>
           <span id="table-status" class="muted"></span>
           <button id="table-close-btn" type="button" class="ghost-btn">✕</button>
@@ -236,10 +412,10 @@
               <tr>
                 <th>Sgnf. <span class="help" data-tip="Significator — the planet or angle whose natal imprint receives the influence. The topic being activated (which life area depends on what that planet/angle represents in the chart).">?</span></th>
                 <th>Promissor <span class="help" data-tip="The moving point whose primary motion carries it toward the significator's fixed position circle — the trigger. A symbol after the name (e.g. □) means an aspect is cast in that planet's Morinus aspect plane, not a plain conjunction.">?</span></th>
-                <th>Position <span class="help" data-tip="The promissor's actual zodiac degree at birth — where the aspect (if any) is measured from.">?</span></th>
-                <th>Arc <span class="help" data-tip="The angular distance, in degrees of Right Ascension, the promissor travels via primary motion to complete this direction.">?</span></th>
-                <th>Type <span class="help" data-tip="D = Direct: promissor moves toward the significator's fixed position. C = Converse: roles swapped because the direct arc would exceed 180 degrees (~180 years). Converse is not weaker or lesser — it produces future events to the same extent as Direct. Purely a computational choice to keep the arc under one lifetime.">?</span></th>
-                <th>Age <span class="help" data-tip="Age in years at which this direction becomes exact, via the Naibod key: 1 degree of arc is approximately 1 year (the sun's mean daily motion, 0.9856 degrees).">?</span></th>
+                <th>Position <span class="help" data-tip="The promissor's actual zodiac degree at birth — where the aspect (if any) is measured from. For a bound-change row (Type B), shows the Egyptian-bound ruler it moves FROM → TO, and the zodiac sign it's happening in, instead.">?</span></th>
+                <th>Arc <span class="help" data-tip="The angular distance, in degrees of Right Ascension, the promissor travels via primary motion to complete this direction. For a bound-change row (Type B), shows the NATAL house (Regiomontanus, fixed) the crossing falls in instead.">?</span></th>
+                <th>Type <span class="help" data-tip="D = Direct: promissor moves toward the significator's fixed position. C = Converse: roles swapped because the direct arc would exceed 180 degrees (~180 years) — not weaker or lesser, purely a computational choice to keep the arc under one lifetime. B = Bound change: the moving point crosses into a new Egyptian-bound ruler en route to this direction completing — traditionally significant in its own right.">?</span></th>
+                <th>Age <span class="help" data-tip="Age in years at which this direction (or bound change) becomes exact, via the Naibod key: 1 degree of arc is approximately 1 year (the sun's mean daily motion, 0.9856 degrees).">?</span></th>
                 <th>Date <span class="help" data-tip="Calendar date this direction becomes exact, computed from your birth date plus the age above.">?</span></th>
               </tr>
             </thead>
@@ -248,6 +424,9 @@
         </div>
       </div>
     </div>
+    <!-- stellarium-web-engine (Option A background layer) — MODULARIZE=1
+         build, exposes a global StelWebEngine(); see stellarium-bridge.js -->
+    <script src="/stellarium/engine/stellarium-web-engine.js"></script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
