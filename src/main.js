@@ -23,6 +23,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { warpActiveUniform, stereographicFovRemap } from './stereographic.js';
 import { initStellarium, syncStellariumTime, syncStellariumLocation, syncStellariumCamera, addStellariumZodiacBand } from './stellarium-bridge.js';
+import { isCoarsePointerDevice, requestGyroPermission, createGyroLookAround } from './gyro.js';
 
 const BODY_BY_KEY = Object.fromEntries(PLANETS.map(p => [p.key, p.body]));
 const ANGLE_KEYS = ['ASC', 'DSC', 'MC', 'IC'];
@@ -266,6 +267,14 @@ composer.addPass(bloomPass);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
+// Phone-tilt look-around (gyro.js) — default ON for touch/coarse-pointer
+// devices (phones/tablets) in center view, since dragging with a thumb to
+// look around is a much worse experience there than just physically
+// turning the phone. Left off on desktop (no gyroscope hardware, and
+// mouse-drag is already the natural control there).
+const gyroPreferred = isCoarsePointerDevice();
+const gyro = createGyroLookAround();
+
 const OUTSIDE_DISTANCE = { min: SPHERE_RADIUS * 1.2, max: SPHERE_RADIUS * 6 };
 // Distance chosen so the WHOLE sphere fits in frame with a bit of margin
 // at DEFAULT_FOV (32°, half-angle 16°): a sphere of radius R at distance d
@@ -369,6 +378,20 @@ function setCenterView(on) {
     applyCameraFov();
   }
   controls.update();
+  // gyro.js: requestGyroPermission() is called here, synchronously inside
+  // this function — which is itself called synchronously from the "View
+  // from center" button's own click handler — because iOS requires that
+  // exact call chain (a real user gesture, with the permission request
+  // not deferred past it) to grant DeviceOrientationEvent access. Started
+  // AFTER the controls.update() above so gyro.start() captures the
+  // ASC-facing default orientation just set as its baseline pose — gyro
+  // taking over produces no visible jump (see gyro.js's own header for the
+  // relative-rotation math this depends on).
+  if (on && gyroPreferred) {
+    requestGyroPermission().then((granted) => { if (granted && centerView) gyro.start(camera.quaternion); });
+  } else {
+    gyro.stop();
+  }
   centerViewBtn.textContent = on ? '🌐 Outside view' : '🎯 View from center';
   // See sky-shaders.js: the dome (and, same reasoning, the ground photo)
   // renders only the surface correct for the camera's current side of the
@@ -1084,7 +1107,18 @@ function animate() {
       rebuild();
     }
   }
-  controls.update();
+  // Gyro takes over camera orientation entirely while live (see gyro.js) —
+  // calling controls.update() at the same time would fight it, snapping
+  // the camera back to OrbitControls' own cached spherical position/target
+  // every frame. Falls back to normal drag-driven OrbitControls whenever
+  // gyro isn't live (desktop, permission denied, or — rarely — granted but
+  // the platform never actually delivers events), so there's always some
+  // way to look around.
+  if (centerView && gyro.isLive) {
+    gyro.apply(camera.quaternion);
+  } else {
+    controls.update();
+  }
 
   if (centerView && stelInstance) {
     // Center-view-only — see updateStellariumBgVisibility's header: outside
