@@ -119,6 +119,18 @@ export function computeMoonInfo(date, observer) {
   return { altitude, azimuth, mag };
 }
 
+// Sun+Moon altitude only, deliberately NOT the full computeSkyState (which
+// also computes every other planet, both angle circles, and the pole —
+// wasted work when called dozens of times to build a day/night brightness
+// curve, see day-slider.js).
+export function computeSunMoonAltitude(date, observer) {
+  const sunEq = equatorialOf(Astronomy.Body.Sun, date, observer);
+  const moonEq = equatorialOf(Astronomy.Body.Moon, date, observer);
+  const sunAlt = horizonOf(date, observer, sunEq.ra, sunEq.dec).altitude;
+  const moonAlt = horizonOf(date, observer, moonEq.ra, moonEq.dec).altitude;
+  return { sunAlt, moonAlt };
+}
+
 // RA(hours)/Dec(deg) → azimuth(deg, 0=N/90=E)/altitude(deg) for this observer+time.
 export function horizonOf(date, observer, raHours, decDeg) {
   return Astronomy.Horizon(date, observer, raHours, decDeg, 'normal');

@@ -96,6 +96,41 @@
       #panel .date-speed button { width: 24px; height: 22px; font-size: 0.85rem; font-weight: 700; }
       #panel .date-speed #date-step-rate { font-size: 0.78rem; color: #333; min-width: 2.4em; text-align: center; }
 
+      /* Mobile-only day/night gradient time slider — see day-slider.js and
+         the markup comment above #day-slider-row. Hidden by default;
+         main.js adds body.is-touch on a coarse-pointer device (phones/
+         tablets), which is the only thing that reveals it. */
+      .mobile-only { display: none; }
+      body.is-touch .mobile-only { display: block; }
+      #day-slider-row { margin-top: 2px; }
+      #day-slider-wrap { position: relative; width: 100%; height: 32px; }
+      #day-slider-gradient {
+        position: absolute; inset: 3px 0; border-radius: 6px; background: #fff;
+        border: 1px solid #ddd; overflow: hidden; pointer-events: none;
+      }
+      #day-slider-gradient svg { display: block; }
+      /* Transparent track/fill — the gradient div underneath does all the
+         visible coloring; this is just an invisible hit-target + thumb.
+         #panel-prefixed (not bare #day-slider) to out-specificity the
+         earlier generic `#panel input { background: #fff; ... }` rule —
+         without this, that rule's extra element-selector term wins over a
+         bare ID selector regardless of source order, painting an opaque
+         white background on the slider that hides the gradient under it. */
+      #panel #day-slider {
+        position: absolute; inset: 0; width: 100%; margin: 0; padding: 0; border: none; background: transparent;
+        -webkit-appearance: none; appearance: none; cursor: pointer;
+      }
+      #day-slider::-webkit-slider-runnable-track { background: transparent; height: 32px; }
+      #day-slider::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 5px; height: 32px; margin-top: 0;
+        background: #222; border: 1px solid #fff; border-radius: 2px; box-shadow: 0 0 2px rgba(0,0,0,0.4);
+      }
+      #day-slider::-moz-range-track { background: transparent; height: 32px; border: none; }
+      #day-slider::-moz-range-thumb {
+        width: 5px; height: 32px; background: #222; border: 1px solid #fff; border-radius: 2px; box-shadow: 0 0 2px rgba(0,0,0,0.4);
+      }
+      #day-slider-hint { display: block; font-size: 0.72rem; color: #666; text-align: center; margin-top: 2px; }
+
       #legend {
         position: absolute; bottom: 16px; left: 16px; z-index: 10; font-size: 0.75rem; color: #555;
         background: rgba(255,255,255,0.85); border-radius: 8px; padding: 8px 12px; line-height: 1.7;
@@ -245,6 +280,19 @@
         <label>Date &amp; time (local)
           <input id="date-input" type="datetime-local">
         </label>
+        <!-- Touch-only (see main.js's isTouchDevice/body.is-touch) — a
+             single 24h noon-to-noon window, dragged through directly,
+             with a real day/night/twilight gradient behind it. Same UX as
+             Stellarium Web's own date-time-picker.vue. Replaces fiddly
+             repeated taps on ◀/▶ below for same-day scrubbing on a phone;
+             the ◀/▶ row stays for jumping whole days/weeks either way. -->
+        <div id="day-slider-row" class="mobile-only">
+          <div id="day-slider-wrap">
+            <div id="day-slider-gradient"></div>
+            <input id="day-slider" type="range" min="0" max="1439" step="1" value="0">
+          </div>
+          <span id="day-slider-hint"></span>
+        </div>
         <div class="date-transport">
           <button id="date-step-back" type="button" title="Step back one interval">◀</button>
           <button id="date-play" class="play" type="button" title="Play/Pause">▶</button>

@@ -23,6 +23,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { warpActiveUniform, stereographicFovRemap } from './stereographic.js';
 import { initStellarium, syncStellariumTime, syncStellariumLocation, syncStellariumCamera, addStellariumZodiacBand } from './stellarium-bridge.js';
+import { sliderStartTime, minutesSinceSliderStart, computeDayStops, hintForMinute, buildGradientSvg } from './day-slider.js';
 
 const BODY_BY_KEY = Object.fromEntries(PLANETS.map(p => [p.key, p.body]));
 const ANGLE_KEYS = ['ASC', 'DSC', 'MC', 'IC'];
@@ -35,6 +36,14 @@ function resolveDirectionPoint(key, state) {
   if (BODY_BY_KEY[key]) return { key, body: BODY_BY_KEY[key] };
   const angle = { ASC: state.asc, DSC: state.dsc, MC: state.mc, IC: state.ic }[key];
   return angle ? { key, ra: angle.ra, dec: angle.dec } : null;
+}
+
+// Reveals the mobile-only day/night gradient slider (see day-slider.js and
+// index.html's .mobile-only rule) — coarse pointer is the same touch-vs-
+// desktop heuristic this app already used for the (since-reverted) gyro
+// feature: phones/tablets, not a mouse-driven laptop.
+if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) {
+  document.body.classList.add('is-touch');
 }
 
 // ── Renderer / scene / camera ────────────────────────────────────────────
@@ -1042,6 +1051,7 @@ function rebuild() {
   // Stellarium hide-state (see updateStellariumBgVisibility) since it
   // doesn't otherwise survive a rebuild.
   updateStellariumBgVisibility();
+  syncDaySlider();
 }
 
 function renderChart2DPanel() {
@@ -1195,6 +1205,66 @@ nowBtn.addEventListener('click', () => {
   rebuild();
 });
 [dateInput, latInput, lonInput, significatorSelect, ...Object.values(layerCheckboxes)].forEach(el => el.addEventListener('change', rebuild));
+
+// ── Mobile day/night gradient slider (day-slider.js) ─────────────────────
+// The element refs below still resolve on desktop (CSS just hides the row
+// via .mobile-only — see body.is-touch near the top of this file) — but
+// syncDaySlider() itself early-exits there, so the ~50 Sun/Moon astronomy
+// calls behind computeDayStops never run on every single rebuild() for a
+// slider nobody can see.
+const daySliderInput = document.getElementById('day-slider');
+const daySliderGradient = document.getElementById('day-slider-gradient');
+const daySliderHint = document.getElementById('day-slider-hint');
+let daySliderCachedStart = null; // Date — only regenerate the gradient when this actually changes
+let daySliderCachedStops = null;
+let daySliderCachedLat = null;
+let daySliderCachedLon = null;
+
+// Repositions the slider/gradient/hint to match the CURRENT dateInput —
+// called at the end of every rebuild() (date, location, Now, steppers, any
+// of it), so the slider always reflects the single source of truth
+// (dateInput) rather than drifting out of sync with it.
+function syncDaySlider() {
+  if (!document.body.classList.contains('is-touch')) return;
+  const date = new Date(dateInput.value || Date.now());
+  const latitude = parseFloat(latInput.value);
+  const longitude = parseFloat(lonInput.value);
+  if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
+  const start = sliderStartTime(date);
+  if (!daySliderCachedStart || daySliderCachedStart.getTime() !== start.getTime()
+      || daySliderCachedLat !== latitude || daySliderCachedLon !== longitude) {
+    daySliderCachedStart = start;
+    daySliderCachedLat = latitude;
+    daySliderCachedLon = longitude;
+    daySliderCachedStops = computeDayStops(start, latitude, longitude);
+    daySliderGradient.innerHTML = buildGradientSvg(daySliderCachedStops);
+  }
+  const minute = Math.min(1439, Math.max(0, minutesSinceSliderStart(date, daySliderCachedStart)));
+  daySliderInput.value = String(minute);
+  daySliderHint.textContent = hintForMinute(daySliderCachedStops, minute);
+}
+
+// Dragging updates dateInput live but throttles the actual rebuild() (full
+// skyGroup teardown/rebuild) to DATE_STEP_REBUILD_INTERVAL_MS — a 'range'
+// input's 'input' event fires on every pixel of drag movement, and calling
+// something as heavy as rebuild() at that rate visibly stutters (same
+// throttle already used for the date-play transport below).
+let daySliderLastRebuildAt = 0;
+daySliderInput.addEventListener('input', () => {
+  if (!daySliderCachedStart) return;
+  const minute = parseInt(daySliderInput.value, 10);
+  const date = new Date(daySliderCachedStart.getTime() + minute * 60000);
+  dateInput.value = toLocalDatetimeValue(date);
+  daySliderHint.textContent = hintForMinute(daySliderCachedStops, minute);
+  const now = performance.now();
+  if (now - daySliderLastRebuildAt >= DATE_STEP_REBUILD_INTERVAL_MS) {
+    daySliderLastRebuildAt = now;
+    rebuild();
+  }
+});
+// Drag has ended (or a tap without drag) — make sure the very last position
+// always lands a rebuild(), even if the throttle above skipped it.
+daySliderInput.addEventListener('change', rebuild);
 
 // ── Calendar date stepper ────────────────────────────────────────────────
 // Steps the real date-input forward/back by a whole selected unit (no
