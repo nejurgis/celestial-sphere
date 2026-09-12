@@ -704,13 +704,27 @@ export function buildAspectPlane(result, planetKey, { radius = 0.035 } = {}) {
   return group;
 }
 
-// Returns { group, markerMesh, markerMaterial, label } — main.js repositions
-// markerMesh and swaps markerMaterial.color every animation frame without
-// touching the rest of the scene.
+// Returns { group, markerMesh, markerMaterial, label, traveledLine,
+// remainingLine } — main.js repositions markerMesh and swaps
+// markerMaterial.color every animation frame without touching the rest of
+// the scene, and calls updateDirectionSweepLines (below) to keep
+// traveledLine/remainingLine split at the current progress point.
 export function buildDirectionGroup(direction, movingLabel, fixedLabel) {
   const group = new THREE.Group();
 
-  group.add(lineFromPoints(direction.sweepPoints, DIRECTION_COLOR, { dashed: true, opacity: 0.7 }));
+  // Split into two lines — SOLID for the arc already traveled (0..now),
+  // DASHED for what's still ahead — rather than one uniformly-dashed line,
+  // so progress is visible on the arc's own shape, not just the marker's
+  // position. Built once here at t=0 (matching markerMesh's own initial
+  // position below); updateDirectionSweepLines replaces both lines'
+  // geometry wholesale as directionYears advances (called from
+  // setDirectionYears in main.js) — same "just rebuild the small geometry
+  // every frame" approach already used for the live ASC crosshair
+  // (updateAscPerpendicularLine), cheap for a ~60-point line.
+  const traveledLine = lineFromPoints([direction.directedXYZ(0), direction.directedXYZ(0)], DIRECTION_COLOR, { opacity: 0.85 });
+  const remainingLine = lineFromPoints(direction.sweepPoints, DIRECTION_COLOR, { dashed: true, opacity: 0.6 });
+  group.add(traveledLine);
+  group.add(remainingLine);
 
   const markerMaterial = new THREE.MeshBasicMaterial({ color: DIRECTION_COLOR });
   applyStereographicWarp(markerMaterial);
@@ -722,7 +736,47 @@ export function buildDirectionGroup(direction, movingLabel, fixedLabel) {
   label.position.copy(markerMesh.position).multiplyScalar(1.12);
   group.add(label);
 
-  return { group, markerMesh, markerMaterial, label };
+  // Which Egyptian bound the promissor is CURRENTLY traveling through —
+  // pushed further out (1.22x vs the arrow label's 1.12x) so the two
+  // don't overlap, both stacking outward from the sphere the same way.
+  // Empty/hidden until main.js's setDirectionYears fills in real text —
+  // building it here (not lazily) keeps creation and update in the same
+  // "who owns this object" place as every other directionMarker field.
+  const boundLabel = makeTextSprite(' ', { color: '#8b5cf6', size: 26, weight: '700', scale: 0.19 });
+  boundLabel.position.copy(markerMesh.position).multiplyScalar(1.22);
+  boundLabel.visible = false;
+  group.add(boundLabel);
+
+  return { group, markerMesh, markerMaterial, label, traveledLine, remainingLine, boundLabel };
+}
+
+function replaceLineGeometry(line, points, dashed) {
+  line.geometry.dispose();
+  line.geometry = new THREE.BufferGeometry().setFromPoints(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+  if (dashed) line.computeLineDistances();
+}
+
+// Resamples traveledLine/remainingLine at the SAME fixed steps
+// direction.sweepPoints itself uses (so both halves still read as one
+// continuous, evenly-sampled curve), split at directionYears — plus the
+// EXACT current point at the split itself, so the solid/dashed boundary
+// always lines up precisely with the marker instead of stopping short of
+// or overshooting it between fixed sample steps.
+export function updateDirectionSweepLines(traveledLine, remainingLine, direction, directionYears) {
+  const STEPS = direction.sweepPoints.length - 1;
+  const arcYears = direction.arcYears;
+  if (!(arcYears > 0) || STEPS <= 0) return;
+  const splitStep = Math.max(0, Math.min(STEPS, Math.round((directionYears / arcYears) * STEPS)));
+
+  const traveledPts = [];
+  for (let i = 0; i <= splitStep; i++) traveledPts.push(direction.directedXYZ((i / STEPS) * arcYears));
+  traveledPts.push(direction.directedXYZ(directionYears));
+
+  const remainingPts = [direction.directedXYZ(directionYears)];
+  for (let i = splitStep + 1; i <= STEPS; i++) remainingPts.push(direction.directedXYZ((i / STEPS) * arcYears));
+
+  replaceLineGeometry(traveledLine, traveledPts, false);
+  replaceLineGeometry(remainingLine, remainingPts, true);
 }
 
 export const DIRECTION_COLORS = { active: DIRECTION_COLOR, hit: DIRECTION_HIT_COLOR };

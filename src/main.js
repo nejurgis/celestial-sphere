@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeDirection, computeZodiacBand,
   computeAspectPlane, computeAspectPoint, computeAllDirections, computeRegiomontanusHouses,
-  computeBoundCrossings, computePlacidusDirection,
+  computeBoundCrossings, computePlacidusDirection, boundOf,
   computeSkyRotationBasis, computeStarField, ZODIAC_SIGNS,
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
   formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
@@ -11,7 +11,7 @@ import {
 } from './astro.js';
 import { skybrightnessPrepare, skybrightnessGetLuminance } from './skybrightness.js';
 import {
-  buildSkyGroup, buildPlanetPath, buildPositionCircle, buildDirectionGroup, buildZodiacBand,
+  buildSkyGroup, buildPlanetPath, buildPositionCircle, buildDirectionGroup, updateDirectionSweepLines, buildZodiacBand,
   buildAspectPlane, buildLiveAscMarker, buildAscPerpendicularLine, updateAscPerpendicularLine, buildStarField, elementColorForDeg,
   setEquatorialSphereOrientation, DIRECTION_COLORS, SPHERE_RADIUS, starGlowTexture, sunHaloTexture,
   buildEquatorialGrid, buildAzimuthalGrid,
@@ -661,6 +661,20 @@ function setDirectionYears(t) {
   if (directionMarker) {
     directionMarker.markerMesh.position.set(...direction.directedXYZ(directionYears));
     directionMarker.label.position.copy(directionMarker.markerMesh.position).multiplyScalar(1.12);
+    updateDirectionSweepLines(directionMarker.traveledLine, directionMarker.remainingLine, direction, directionYears);
+    // Which Egyptian bound the promissor is CURRENTLY traveling through —
+    // redrawn only when it actually changes (not every frame during
+    // playback, which would otherwise repaint the label's canvas ~60x/sec
+    // for a value that's usually unchanged across many consecutive frames).
+    if (directionMarker.boundLabel && direction.directedElon) {
+      const bound = boundOf(direction.directedElon(directionYears));
+      if (bound.ruler !== directionMarker.lastBoundRuler) {
+        directionMarker.lastBoundRuler = bound.ruler;
+        updateTextSprite(directionMarker.boundLabel, `${pointLabel(bound.ruler)}'s bound`, { color: '#8b5cf6', size: 26, weight: '700', scale: 0.19 });
+        directionMarker.boundLabel.visible = true;
+      }
+      directionMarker.boundLabel.position.copy(directionMarker.markerMesh.position).multiplyScalar(1.22);
+    }
     const hit = directionYears >= direction.arcYears;
     directionMarker.markerMaterial.color.set(hit ? DIRECTION_COLORS.hit : DIRECTION_COLORS.active);
     if (hit) stopPlaying();
@@ -1030,10 +1044,11 @@ function rebuild() {
           promissorPoint, resolveDirectionPoint(significatorKey, state),
           date, state.observer, SPHERE_RADIUS, { selfReturn: isSelfReturn },
         );
-    const { group, markerMesh, markerMaterial, label } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);
+    const { group, markerMesh, markerMaterial, label, traveledLine, remainingLine, boundLabel } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);
     group.visible = layers.direction;
     skyGroup.add(group);
-    directionMarker = { markerMesh, markerMaterial, label };
+    directionMarker = { markerMesh, markerMaterial, label, traveledLine, remainingLine, boundLabel };
+    setDirectionYears(0); // initializes traveled/remaining split + bound label, not just marker position
     slider.max = String(direction.arcYears);
     playYearsPerSecond = Math.max(1, direction.arcYears / 8);
     boundCrossings = computeBoundCrossings(direction);
