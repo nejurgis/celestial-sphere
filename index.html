@@ -152,10 +152,17 @@
       #legend .help:hover::after, #panel .help:hover::after { opacity: 1; }
 
       #direction-panel {
-        position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+        /* left:0/right:0/width+margin:auto, NOT left:50%+transform:translateX(-50%)
+           — a `transform` on an ancestor breaks a native <select>'s popup
+           positioning in Chromium (the browser computes where to draw the
+           dropdown as if the transform weren't applied), so with the old
+           centering method every <select> in this panel — promissor,
+           aspect, significator, system, direction, dir-step-size — opened
+           its options list off to the side instead of under the control. */
+        position: absolute; bottom: 16px; left: 0; right: 0; width: fit-content; min-width: 470px; margin: 0 auto; z-index: 10;
         background: rgba(255,255,255,0.94); border: 1px solid #e0e0e0; border-radius: 12px;
         padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); backdrop-filter: blur(6px);
-        display: flex; flex-direction: column; gap: 8px; min-width: 470px;
+        display: flex; flex-direction: column; gap: 8px;
       }
       #direction-panel[hidden] { display: none; }
       #direction-panel .row1 { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: #555; }
@@ -179,11 +186,19 @@
       .bound-crossings .crossing.passed { background: #eee; color: #999; border-color: #e2e2e2; }
       #direction-panel #direction-readout { font-size: 0.78rem; color: #333; white-space: nowrap; min-width: 210px; text-align: right; }
       #direction-panel.hit #direction-readout { color: #22c55e; font-weight: 700; }
+      /* Past a normal lifespan (>90y, e.g. a self-return like Jupiter to
+         Jupiter at ~365y) — greys the actual selection row, since this is
+         the live, currently-playable pairing, not a table row elsewhere. */
+      #direction-panel.long-arc .row1 { opacity: 0.45; }
+      #direction-panel.long-arc #direction-readout { color: #999; }
       .ghost-btn { background: transparent !important; color: #666 !important; border: 1px solid #ccc !important; font-weight: 600; padding: 5px 10px !important; width: auto !important; }
       .ghost-btn:hover { background: #eee !important; }
 
       #table-panel {
-        position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 20;
+        /* left:0/right:0/margin:auto, not left:50%+transform — see
+           #direction-panel's own comment for why (breaks its own
+           #table-system select's native dropdown position in Chromium). */
+        position: absolute; top: 16px; left: 0; right: 0; margin: 0 auto; z-index: 20;
         background: rgba(255,255,255,0.97); border: 1px solid #d8d8d8; border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
         width: min(760px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
@@ -224,6 +239,11 @@
       #table-panel tr.type-b td:nth-child(5) { color: #5a3fa0; font-weight: 700; }
       #table-panel tr.nature-easy td { background: rgba(34, 197, 94, 0.12); }
       #table-panel tr.nature-hard td { background: rgba(220, 38, 38, 0.12); }
+      /* Directions past a normal lifespan (>90y) — greyed, not hidden, so
+         the row's still there for reference but doesn't visually compete
+         with the directions someone will actually live to see. */
+      #table-panel tr.long-arc td { color: #aaa; background: none; }
+      #table-panel tr.long-arc.type-c td:nth-child(5), #table-panel tr.long-arc.type-d td:nth-child(5) { color: #aaa; }
       #table-panel tr:hover td { background: #f7f9fc; }
 
       #layers-panel {
@@ -247,7 +267,11 @@
       #layers-panel button:hover { color: #1d4d80; }
 
       #chart2d-panel {
-        position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 20;
+        /* left:0/right:0/width+margin:auto, not left:50%+transform — see
+           #direction-panel's own comment for why (breaks its own
+           #chart2d-house-system select's native dropdown position in
+           Chromium). */
+        position: absolute; top: 16px; left: 0; right: 0; width: fit-content; margin: 0 auto; z-index: 20;
         background: rgba(255,255,255,0.97); border: 1px solid #d8d8d8; border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
         display: flex; flex-direction: column;
@@ -255,6 +279,22 @@
       #chart2d-panel[hidden] { display: none; }
       .chart2d-body { padding: 4px 16px 16px; display: flex; justify-content: center; }
       #chart2d-svg { width: 480px; height: 480px; user-select: none; -webkit-user-select: none; }
+
+      /* Guided tour narration — see main.js's startGuidedTour/endGuidedTour.
+         Same top-center slot as #chart2d-panel/#table-panel; those are
+         normally closed during a tour (it's meant to be watched in center
+         view, not alongside the 2D chart), so the overlap is an accepted
+         edge case rather than something worth a second UI slot for. */
+      #tour-panel {
+        position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 15;
+        background: rgba(255,255,255,0.96); border: 1px solid #e0e0e0; border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
+        padding: 12px 16px; width: min(440px, 90vw);
+      }
+      #tour-panel[hidden] { display: none; }
+      #tour-panel .tour-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      #tour-panel #tour-title { font-size: 0.9rem; }
+      #tour-panel #tour-narration { margin: 8px 0 0; font-size: 0.82rem; line-height: 1.5; color: #333; }
     </style>
   </head>
   <body>
@@ -422,6 +462,15 @@
           <span id="direction-readout">—</span>
         </div>
         <div class="bound-crossings" id="bound-crossings"></div>
+        <button id="tour-start-btn" type="button" class="ghost-btn" style="margin-top: 6px;" title="Enter center view and watch the promissor sweep toward the significator — the camera follows it automatically, with live narration of what's happening">🎓 Guided tour (center view)</button>
+      </div>
+
+      <div id="tour-panel" hidden>
+        <div class="tour-header">
+          <strong id="tour-title">Guided tour</strong>
+          <button id="tour-end-btn" type="button" class="ghost-btn">✕ End tour</button>
+        </div>
+        <p id="tour-narration"></p>
       </div>
 
       <div id="chart2d-panel" hidden>

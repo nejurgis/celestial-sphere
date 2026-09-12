@@ -512,11 +512,18 @@ function updateLegend(layers, significatorKey, promissorKey) {
 function updateReadout() {
   if (!direction) {
     readout.textContent = '—';
-    directionPanel.classList.remove('hit');
+    directionPanel.classList.remove('hit', 'long-arc');
     return;
   }
   const hit = directionYears >= direction.arcYears;
   directionPanel.classList.toggle('hit', hit);
+  // Past a normal lifespan (self-returns especially — e.g. Jupiter to
+  // Jupiter is a ~365-year period) — greys the promissor/aspect/
+  // significator selection row itself, not just a table row elsewhere,
+  // since THIS pairing is the one actually selected and playable right
+  // now. Still fully functional (transport/tour both still work on it) —
+  // greyed as a "this exceeds a normal lifespan" signal, not disabled.
+  directionPanel.classList.toggle('long-arc', direction.arcYears > 90);
   readout.textContent = hit
     ? `Directional arc reached — ${direction.arcYears.toFixed(1)} yrs${direction.swapped ? ' (converse)' : ''}`
     : `Directional arc: ${directionYears.toFixed(1)} / ${direction.arcYears.toFixed(1)} yrs${direction.swapped ? ' (converse)' : ''}`;
@@ -1094,6 +1101,17 @@ function animate() {
       rebuild();
     }
   }
+  // Guided tour (see startGuidedTour) ends itself the moment playback stops
+  // — either naturally (setDirectionYears' own stopPlaying() call on
+  // reaching arcYears) or the user pausing manually — rather than hooking
+  // every existing dir-transport button individually.
+  if (tourActive && !isPlaying) endGuidedTour();
+  if (tourActive && centerView && directionMarker) {
+    const lookDir = directionMarker.markerMesh.position.clone().normalize();
+    camera.position.copy(lookDir).multiplyScalar(-CENTER_DISTANCE);
+    controls.target.set(0, 0, 0);
+    updateTourNarration(now);
+  }
   controls.update();
 
   if (centerView && stelInstance) {
@@ -1411,6 +1429,83 @@ stepBackBtn.addEventListener('click', () => { stopPlaying(); setDirectionYears(d
 stepFwdBtn.addEventListener('click', () => { stopPlaying(); setDirectionYears(directionYears + parseFloat(stepSizeSelect.value)); });
 slider.addEventListener('input', () => { stopPlaying(); setDirectionYears(parseFloat(slider.value)); });
 
+// ── Guided tour ───────────────────────────────────────────────────────────
+// "Understanding primary directions" is hardest in center view specifically
+// — it's a whole-sphere sweep along the equator, easy to see as a shape
+// from outside, but in a first-person warped-fisheye view the moving
+// marker is very often just plain behind you. This automates BOTH halves
+// of watching it properly: plays the direction from 0 → arcYears at a
+// slower, actually-watchable pace (TOUR_DURATION_SECONDS, vs. free play's
+// own arcYears/8), and re-aims the camera at the moving marker every frame
+// so it's always in view without the user having to hunt for it — same
+// -dir*CENTER_DISTANCE / target=(0,0,0) trick setCenterView's own
+// ASC-facing default uses to look in a given direction from a camera
+// that's pinned near the origin.
+const TOUR_DURATION_SECONDS = 22;
+const tourStartBtn = document.getElementById('tour-start-btn');
+const tourPanel = document.getElementById('tour-panel');
+const tourTitleEl = document.getElementById('tour-title');
+const tourNarrationEl = document.getElementById('tour-narration');
+const tourEndBtn = document.getElementById('tour-end-btn');
+let tourActive = false;
+let tourLastYears = 0;
+let tourFlashUntil = 0; // performance.now() timestamp — a bound-crossing announcement holds the narration line until this passes
+
+function tourIntroText() {
+  const proName = pointLabel(promissorSelect.value);
+  const sigName = pointLabel(significatorSelect.value);
+  const aspectGlyph = ASPECT_GLYPHS[Math.abs(parseFloat(aspectSelect.value))] ?? '☌';
+  return `${proName} is directed to ${sigName} (${aspectGlyph}). The promissor sweeps forward along the celestial equator — 1° of arc per year (the Naibod key) — until it reaches this aspect. Watch it travel; the camera follows automatically.`;
+}
+
+function startGuidedTour() {
+  if (!direction) return;
+  if (!centerView) setCenterView(true);
+  stopPlaying();
+  stopDateStepping();
+  dayRotating = false;
+  dayRotateBtn.textContent = '▶';
+  setDirectionYears(0);
+  tourActive = true;
+  tourLastYears = 0;
+  tourFlashUntil = 0;
+  tourPanel.hidden = false;
+  tourTitleEl.textContent = `${pointLabel(promissorSelect.value)} → ${pointLabel(significatorSelect.value)}`;
+  tourNarrationEl.textContent = tourIntroText();
+  playYearsPerSecond = Math.max(0.5, direction.arcYears / TOUR_DURATION_SECONDS);
+  isPlaying = true;
+  playBtn.textContent = '⏸';
+}
+
+function endGuidedTour() {
+  tourActive = false;
+  tourPanel.hidden = true;
+  stopPlaying();
+}
+
+// Called once per frame while touring (see animate()) — flashes a short
+// announcement for ~2.5s whenever a new Egyptian-bound crossing is passed,
+// otherwise shows the live years-elapsed progress line.
+function updateTourNarration(nowMs) {
+  if (!direction) return;
+  for (const c of boundCrossings) {
+    if (tourLastYears < c.years && directionYears >= c.years) {
+      tourNarrationEl.textContent = `${pointLabel(promissorSelect.value)} now enters ${c.to.ruler}'s bound.`;
+      tourFlashUntil = nowMs + 2500;
+      break;
+    }
+  }
+  tourLastYears = directionYears;
+  if (nowMs < tourFlashUntil) return;
+  const hit = directionYears >= direction.arcYears;
+  tourNarrationEl.textContent = hit
+    ? `Direction complete — exact at ${direction.arcYears.toFixed(1)} years.`
+    : `Sweeping forward: ${directionYears.toFixed(1)} / ${direction.arcYears.toFixed(1)} years elapsed.`;
+}
+
+tourStartBtn.addEventListener('click', startGuidedTour);
+tourEndBtn.addEventListener('click', endGuidedTour);
+
 // ── Directions table ("Prognosis") ───────────────────────────────────────
 // Every promissor/significator/aspect combination, chronologically — not
 // just the one direction selected above. Computed on demand (not on every
@@ -1502,7 +1597,11 @@ function computeTable() {
     const position = r.promissorElon != null ? formatEclipticDegree(r.promissorElon) : '—';
     const type = r.swapped ? 'C' : 'D';
     const natureClass = rowNatureClass(r);
-    return `<tr class="type-${type.toLowerCase()} ${natureClass}">
+    // Past a normal lifespan — still a real, computable pairing (kept in
+    // the table for reference), just greyed rather than competing visually
+    // with the ones someone will actually live to see.
+    const longArcClass = r.arcYears > 90 ? 'long-arc' : '';
+    return `<tr class="type-${type.toLowerCase()} ${natureClass} ${longArcClass}">
       <td>${pointLabel(r.significatorKey)}</td>
       <td>${promissorLabel}</td>
       <td>${position}</td>
