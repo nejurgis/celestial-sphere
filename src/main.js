@@ -8,6 +8,7 @@ import {
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
   formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
   computeEquatorialGrid, computeAzimuthalGrid, computeAscPerpendicular, computeWholeSignHouses,
+  computeRegiomontanusConstruction, computePlacidusConstruction,
 } from './astro.js';
 import { skybrightnessPrepare, skybrightnessGetLuminance } from './skybrightness.js';
 import {
@@ -15,6 +16,8 @@ import {
   buildAspectPlane, buildLiveAscMarker, buildAscPerpendicularLine, updateAscPerpendicularLine, buildStarField, elementColorForDeg,
   setEquatorialSphereOrientation, DIRECTION_COLORS, SPHERE_RADIUS, starGlowTexture, sunHaloTexture,
   buildEquatorialGrid, buildAzimuthalGrid,
+  buildRegiomontanusConstruction, revealHouseCirclePartial, disposeRegiomontanusConstruction,
+  buildPlacidusConstruction, revealPlacidusCurvePartial, disposePlacidusConstruction,
 } from './scene.js';
 import { renderChart2D } from './chart2d.js';
 import { updateTextSprite } from './labels.js';
@@ -884,6 +887,8 @@ function rebuild() {
   }
 
   stopPlaying();
+  stopRegioConstruction();
+  stopPlacidusConstruction();
   const preservedDayRotationDeg = dayRotationDeg; // a layer toggle etc. shouldn't reset "what time it is"
   dayRotating = false;
   dayRotateBtn.textContent = '▶';
@@ -1103,6 +1108,12 @@ function animate() {
   }
   if (dayRotating) {
     setDayRotationDeg(dayRotationDeg + dt * (360 / DAY_ROTATION_SECONDS));
+  }
+  if (regioAnimActive) {
+    advanceRegioConstruction(dt);
+  }
+  if (placidusAnimActive) {
+    advancePlacidusConstruction(dt);
   }
   if (dateStepPlaying) {
     dateStepElapsedMs += dt * DATE_STEP_MS[dateStepUnitSelect.value] * DATE_STEP_RATE_STEPS[dateStepRateIndex];
@@ -1520,6 +1531,214 @@ function updateTourNarration(nowMs) {
 
 tourStartBtn.addEventListener('click', startGuidedTour);
 tourEndBtn.addEventListener('click', endGuidedTour);
+
+// ── Regiomontanus construction (pedagogical animation) ───────────────────
+// Regiomontanus is a purely SPATIAL construction (where in the sky a house
+// circle falls), unlike Placidus's temporal one (how far through a body's
+// own diurnal/nocturnal arc it's traveled) — this animates the actual
+// geometry step by step: the equator split into 12 equal 30° arcs from
+// RAMC, each division point's own great circle through the horizon's real
+// North/South points (not the celestial pole), and where that circle
+// crosses the ecliptic to land the cusp. Independent of skyGroup's own
+// lifecycle (added straight to `scene`, not skyGroup) so it isn't torn
+// down/rebuilt by every unrelated rebuild() call — stopRegioConstruction()
+// is what tears it down instead, called both from its own Stop button and
+// automatically at the top of rebuild() (same self-terminating pattern as
+// the guided tour above).
+const REGIO_CIRCLE_SECONDS = 1.8; // how long one house's great circle takes to "grow" in
+const REGIO_HOLD_SECONDS = 1.3;   // pause on the landed cusp before moving to the next house
+const regioConstructBtn = document.getElementById('regio-construct-btn');
+const regioPanel = document.getElementById('regio-panel');
+const regioNarrationEl = document.getElementById('regio-narration');
+const regioStopBtn = document.getElementById('regio-stop-btn');
+let regioConstruction = null; // { group, northMarker, houses: [...] } from buildRegiomontanusConstruction
+let regioAnimActive = false;
+let regioAnimHouseIdx = 0;
+let regioAnimPhase = 'circle'; // 'circle' (growing) | 'hold' (paused on the landed cusp)
+let regioAnimElapsed = 0;
+
+function regioIntroText() {
+  return "Regiomontanus divides the celestial equator into 12 equal 30° arcs from RAMC, then projects each division point through a great circle passing through the horizon's own North and South points. Where that circle crosses the ecliptic is the house cusp — purely spatial (where in the sky), unlike Placidus's temporal construction (how far through a body's own daily arc).";
+}
+function regioHouseText(h) {
+  return `House ${h.house}: division point at RAMC+${h.offsetDeg}° on the equator → great circle through the horizon's N/S → crosses the ecliptic at ${formatEclipticDegree(h.cuspDeg)}.`;
+}
+
+function startRegioConstruction() {
+  if (!lastState || !natalObserver) return;
+  stopRegioConstruction();
+  stopPlacidusConstruction(); // the two are mutually exclusive — same "explain a house system" slot, avoids 20 criss-crossing lines at once
+  const construction = computeRegiomontanusConstruction(
+    natalDate, natalObserver, { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc }, SPHERE_RADIUS,
+  );
+  regioConstruction = buildRegiomontanusConstruction(construction);
+  scene.add(regioConstruction.group);
+  regioAnimActive = true;
+  regioAnimHouseIdx = 0;
+  regioAnimPhase = 'circle';
+  regioAnimElapsed = 0;
+  regioConstruction.houses[0].divisionMarker.visible = true;
+  regioPanel.hidden = false;
+  regioNarrationEl.textContent = regioIntroText();
+  regioConstructBtn.textContent = '■ Stop';
+}
+
+function stopRegioConstruction() {
+  if (regioConstruction) {
+    scene.remove(regioConstruction.group);
+    disposeRegiomontanusConstruction(regioConstruction);
+  }
+  regioConstruction = null;
+  regioAnimActive = false;
+  regioPanel.hidden = true;
+  regioConstructBtn.textContent = '📐 How houses are built (Regiomontanus)';
+}
+
+// Called once per frame from animate() while regioAnimActive — advances
+// the current house's growing-circle / holding-on-cusp phases, and steps
+// to the next house (in the sweep order computeRegiomontanusConstruction
+// already sorted by) once both phases finish. Stays on the last frame
+// (everything revealed, all 12 cusps visible) once done, rather than
+// clearing itself — the user reviews the finished wheel via the Stop
+// button, same as the guided tour ends on its own final frame.
+function advanceRegioConstruction(dt) {
+  if (!regioAnimActive || !regioConstruction) return;
+  const h = regioConstruction.houses[regioAnimHouseIdx];
+  regioAnimElapsed += dt;
+  if (regioAnimPhase === 'circle') {
+    const frac = Math.min(1, regioAnimElapsed / REGIO_CIRCLE_SECONDS);
+    const count = Math.max(2, Math.round(frac * h.circlePoints.length));
+    revealHouseCirclePartial(h, count);
+    if (frac >= 1) {
+      h.cuspMarker.visible = true;
+      h.cuspLabel.visible = true;
+      h.cuspTick.visible = true;
+      regioNarrationEl.textContent = regioHouseText(h);
+      regioAnimPhase = 'hold';
+      regioAnimElapsed = 0;
+    }
+  } else if (regioAnimPhase === 'hold') {
+    if (regioAnimElapsed >= REGIO_HOLD_SECONDS) {
+      regioAnimHouseIdx += 1;
+      regioAnimElapsed = 0;
+      if (regioAnimHouseIdx >= regioConstruction.houses.length) {
+        regioAnimActive = false;
+        regioNarrationEl.textContent = 'All 12 house cusps built — each one is just where its own great circle crosses the ecliptic.';
+      } else {
+        regioAnimPhase = 'circle';
+        regioConstruction.houses[regioAnimHouseIdx].divisionMarker.visible = true;
+      }
+    }
+  }
+}
+
+regioConstructBtn.addEventListener('click', () => {
+  if (regioConstruction) stopRegioConstruction(); else startRegioConstruction();
+});
+regioStopBtn.addEventListener('click', stopRegioConstruction);
+
+// ── Placidus construction (pedagogical animation) ────────────────────────
+// The comparison case: Placidus is TEMPORAL, not spatial — each cusp is
+// the ecliptic point that has completed 1/3 or 2/3 of its own diurnal/
+// nocturnal semi-arc, traced out here as a curved locus (across
+// declination) rather than a great circle. The 4 angular cusps (ASC/IC/
+// DSC/MC) are shown immediately, unanimated, since they're the same
+// already-known angles any quadrant system shares; only the 8 non-angular
+// ones animate. Same lifecycle pattern as Regiomontanus above (own scene
+// group, self-terminating via stopPlacidusConstruction).
+const PLACIDUS_CURVE_SECONDS = 1.8;
+const PLACIDUS_HOLD_SECONDS = 1.3;
+const placidusConstructBtn = document.getElementById('placidus-construct-btn');
+const placidusPanel = document.getElementById('placidus-panel');
+const placidusNarrationEl = document.getElementById('placidus-narration');
+const placidusStopBtn = document.getElementById('placidus-stop-btn');
+let placidusConstruction = null; // { group, angleMarkers, houses: [...] } from buildPlacidusConstruction
+let placidusAnimActive = false;
+let placidusAnimHouseIdx = 0;
+let placidusAnimPhase = 'curve'; // 'curve' (growing) | 'hold' (paused on the landed cusp)
+let placidusAnimElapsed = 0;
+
+function placidusIntroText(maxDecDeg) {
+  return `Placidus divides each degree's diurnal/nocturnal semi-arc into thirds — a cusp is the ecliptic point that has completed a given fraction of its OWN journey through the sky, not a point on any circle. Undefined past ±${maxDecDeg.toFixed(1)}° declination here (the co-latitude) — circumpolar points never rise or set, so they have no semi-arc to divide at all.`;
+}
+// Houses 11/2/5/8 each trisect their quadrant at the 1/3 point (closer to
+// the preceding angle — MC/ASC/IC/DSC respectively), 12/3/6/9 at 2/3 —
+// matches PLACIDUS_CUSP_TARGET_M in astro.js exactly (e.g. house 11's
+// target -30° is 1/3 of the way through the 90°-wide MC→ASC quadrant).
+const PLACIDUS_FRACTION_LABEL = { 11: '1/3', 2: '1/3', 5: '1/3', 8: '1/3', 12: '2/3', 3: '2/3', 6: '2/3', 9: '2/3' };
+function placidusHouseText(h) {
+  return `House ${h.house}: the locus of points ${PLACIDUS_FRACTION_LABEL[h.house]} through their own diurnal/nocturnal semi-arc → crosses the ecliptic at ${formatEclipticDegree(h.cuspDeg)}.`;
+}
+
+function startPlacidusConstruction() {
+  if (!lastState || !natalObserver) return;
+  stopPlacidusConstruction();
+  stopRegioConstruction();
+  const construction = computePlacidusConstruction(
+    natalDate, natalObserver, { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc }, SPHERE_RADIUS,
+  );
+  placidusConstruction = buildPlacidusConstruction(construction);
+  scene.add(placidusConstruction.group);
+  for (const a of placidusConstruction.angleMarkers) {
+    a.cuspMarker.visible = true;
+    a.cuspLabel.visible = true;
+    a.cuspTick.visible = true;
+  }
+  placidusAnimActive = placidusConstruction.houses.length > 0;
+  placidusAnimHouseIdx = 0;
+  placidusAnimPhase = 'curve';
+  placidusAnimElapsed = 0;
+  placidusPanel.hidden = false;
+  placidusNarrationEl.textContent = placidusIntroText(construction.maxDecDeg)
+    + (placidusAnimActive ? '' : ' Every non-angular cusp is undefined at this latitude/date — only the 4 angles (ASC/IC/DSC/MC) exist.');
+  placidusConstructBtn.textContent = '■ Stop';
+}
+
+function stopPlacidusConstruction() {
+  if (placidusConstruction) {
+    scene.remove(placidusConstruction.group);
+    disposePlacidusConstruction(placidusConstruction);
+  }
+  placidusConstruction = null;
+  placidusAnimActive = false;
+  placidusPanel.hidden = true;
+  placidusConstructBtn.textContent = '📐 How houses are built (Placidus)';
+}
+
+function advancePlacidusConstruction(dt) {
+  if (!placidusAnimActive || !placidusConstruction) return;
+  const h = placidusConstruction.houses[placidusAnimHouseIdx];
+  placidusAnimElapsed += dt;
+  if (placidusAnimPhase === 'curve') {
+    const frac = Math.min(1, placidusAnimElapsed / PLACIDUS_CURVE_SECONDS);
+    const count = Math.max(2, Math.round(frac * h.curvePoints.length));
+    revealPlacidusCurvePartial(h, count);
+    if (frac >= 1) {
+      h.cuspMarker.visible = true;
+      h.cuspLabel.visible = true;
+      h.cuspTick.visible = true;
+      placidusNarrationEl.textContent = placidusHouseText(h);
+      placidusAnimPhase = 'hold';
+      placidusAnimElapsed = 0;
+    }
+  } else if (placidusAnimPhase === 'hold') {
+    if (placidusAnimElapsed >= PLACIDUS_HOLD_SECONDS) {
+      placidusAnimHouseIdx += 1;
+      placidusAnimElapsed = 0;
+      if (placidusAnimHouseIdx >= placidusConstruction.houses.length) {
+        placidusAnimActive = false;
+        placidusNarrationEl.textContent = 'Every definable cusp built — each is a curved locus, not a circle, and some may be missing entirely at extreme latitudes.';
+      } else {
+        placidusAnimPhase = 'curve';
+      }
+    }
+  }
+}
+
+placidusConstructBtn.addEventListener('click', () => {
+  if (placidusConstruction) stopPlacidusConstruction(); else startPlacidusConstruction();
+});
+placidusStopBtn.addEventListener('click', stopPlacidusConstruction);
 
 // ── Directions table ("Prognosis") ───────────────────────────────────────
 // Every promissor/significator/aspect combination, chronologically — not

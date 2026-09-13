@@ -280,21 +280,25 @@
       .chart2d-body { padding: 4px 16px 16px; display: flex; justify-content: center; }
       #chart2d-svg { width: 480px; height: 480px; user-select: none; -webkit-user-select: none; }
 
-      /* Guided tour narration — see main.js's startGuidedTour/endGuidedTour.
-         Same top-center slot as #chart2d-panel/#table-panel; those are
-         normally closed during a tour (it's meant to be watched in center
-         view, not alongside the 2D chart), so the overlap is an accepted
-         edge case rather than something worth a second UI slot for. */
-      #tour-panel {
+      /* Guided tour / Regiomontanus construction narration — see main.js's
+         startGuidedTour/endGuidedTour and startRegioConstruction/
+         stopRegioConstruction. Same top-center slot as #chart2d-panel/
+         #table-panel; those, and each other, are normally closed while one
+         of these runs, so the overlap is an accepted edge case rather than
+         something worth a dedicated UI slot each. Neither has a <select>
+         inside, so plain left:50%+transform centering is fine here (see
+         #direction-panel's own comment for why that pattern is unsafe
+         specifically when a <select> IS involved). */
+      #tour-panel, #regio-panel, #placidus-panel {
         position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 15;
         background: rgba(255,255,255,0.96); border: 1px solid #e0e0e0; border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
         padding: 12px 16px; width: min(440px, 90vw);
       }
-      #tour-panel[hidden] { display: none; }
-      #tour-panel .tour-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-      #tour-panel #tour-title { font-size: 0.9rem; }
-      #tour-panel #tour-narration { margin: 8px 0 0; font-size: 0.82rem; line-height: 1.5; color: #333; }
+      #tour-panel[hidden], #regio-panel[hidden], #placidus-panel[hidden] { display: none; }
+      #tour-panel .tour-header, #regio-panel .tour-header, #placidus-panel .tour-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      #tour-panel #tour-title, #regio-panel #regio-title, #placidus-panel #placidus-title { font-size: 0.9rem; }
+      #tour-panel #tour-narration, #regio-panel #regio-narration, #placidus-panel #placidus-narration { margin: 8px 0 0; font-size: 0.82rem; line-height: 1.5; color: #333; }
     </style>
   </head>
   <body>
@@ -369,6 +373,24 @@
         <input id="day-rotation-slider" type="range" min="0" max="360" step="0.5" value="0" title="Scrub through the day manually (hours past the natal moment)">
         <button id="center-view-btn" type="button" class="ghost-btn" style="margin-top: 4px;" title="Switch between the outside orbit view and a first-person view from the observer's own position at the center — Stellarium's real sky loads automatically here">🎯 View from center</button>
         <button id="focus-mode-btn" type="button" class="ghost-btn" style="margin-top: 4px;" title="Hide every other panel to declutter the view">▭ Focus mode</button>
+        <button id="regio-construct-btn" type="button" class="ghost-btn" style="margin-top: 4px;" title="Animate how Regiomontanus house cusps are actually built: the celestial equator split into 12 equal 30° arcs, each division point's own great circle through the horizon's N/S points, and where that circle crosses the ecliptic — best viewed from outside">📐 How houses are built (Regiomontanus)</button>
+        <button id="placidus-construct-btn" type="button" class="ghost-btn" style="margin-top: 4px;" title="Animate how Placidus house cusps are actually built, for comparison: a TEMPORAL construction, not a spatial one — each cusp is the ecliptic point that has completed 1/3 or 2/3 of its own diurnal/nocturnal semi-arc, traced out as a curved locus across declination rather than a great circle. Undefined past the co-latitude (circumpolar) — best viewed from outside">📐 How houses are built (Placidus)</button>
+      </div>
+
+      <div id="regio-panel" hidden>
+        <div class="tour-header">
+          <strong id="regio-title">Regiomontanus construction</strong>
+          <button id="regio-stop-btn" type="button" class="ghost-btn">✕ Stop</button>
+        </div>
+        <p id="regio-narration"></p>
+      </div>
+
+      <div id="placidus-panel" hidden>
+        <div class="tour-header">
+          <strong id="placidus-title">Placidus construction</strong>
+          <button id="placidus-stop-btn" type="button" class="ghost-btn">✕ Stop</button>
+        </div>
+        <p id="placidus-narration"></p>
       </div>
 
       <div id="layers-panel">

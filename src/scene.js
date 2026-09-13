@@ -781,6 +781,184 @@ export function updateDirectionSweepLines(traveledLine, remainingLine, direction
 
 export const DIRECTION_COLORS = { active: DIRECTION_COLOR, hit: DIRECTION_HIT_COLOR };
 
+// ── House-system construction (pedagogical animations) ────────────────────
+// Two builders below — buildRegiomontanusConstruction and
+// buildPlacidusConstruction — visualize what their matching astro.js
+// computers produced. Every piece starts hidden/empty; main.js's own
+// animation drivers (startRegioConstruction/startPlacidusConstruction +
+// animate()) reveal them one house at a time.
+const REGIO_COLOR = 0xd946ef;    // magenta — Regiomontanus's great circles
+const PLACIDUS_COLOR = 0x06b6d4; // cyan — Placidus's curved loci; deliberately far from magenta so running one after the other reads as a clear contrast
+const CONSTRUCTION_TUBE_RADIUS = 0.028; // real 3D tube, not a THREE.Line — Line's linewidth is ignored on most platforms, see tubeFromPoints's own header
+
+// Replaces mesh's geometry with a tube through the first `count` points of
+// `points` — called every animate() frame while a curve/circle is
+// "growing" in. Same rebuild-small-geometry-each-frame approach as the
+// live ASC crosshair and direction sweep lines above.
+function growTube(mesh, points, count) {
+  const pts = points.slice(0, Math.max(2, count));
+  const curve = new THREE.CatmullRomCurve3(pts.map(([x, y, z]) => new THREE.Vector3(x, y, z)), false);
+  mesh.geometry.dispose();
+  mesh.geometry = new THREE.TubeGeometry(curve, Math.max(2, pts.length), CONSTRUCTION_TUBE_RADIUS, 8, false);
+  mesh.visible = true;
+}
+
+function emptyTube(color) {
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
+  applyStereographicWarp(mat);
+  return new THREE.Mesh(new THREE.BufferGeometry(), mat);
+}
+
+// A short, fully-built (not growing) tick crossing the zodiac band's own
+// width at a cusp's longitude — see computeAscPerpendicular's reuse in
+// astro.js for why this is the SAME helper the live ASC crosshair uses.
+// Thinner than the main circle/curve tubes so it doesn't visually compete
+// with them, but still real geometry (not a THREE.Line) so it survives
+// the stereographic warp/fov changes the same way everything else here does.
+function buildCuspTick(points, color) {
+  const mesh = emptyTube(color);
+  const curve = new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)), false);
+  mesh.geometry.dispose();
+  mesh.geometry = new THREE.TubeGeometry(curve, points.length, CONSTRUCTION_TUBE_RADIUS * 0.6, 6, false);
+  mesh.visible = false;
+  return mesh;
+}
+
+export function disposeConstructionGroup(construction) {
+  construction.group.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      const map = obj.material.map;
+      if (map?.isCanvasTexture) map.dispose();
+      obj.material.dispose();
+    }
+  });
+}
+
+// Visualizes computeRegiomontanusConstruction (astro.js): the 12 equal
+// equatorial division points, each one's full house-circle great circle
+// (through the horizon's North/South points — not the celestial pole),
+// and where that circle meets the ecliptic.
+export function buildRegiomontanusConstruction(construction) {
+  const group = new THREE.Group();
+
+  const northMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
+  applyStereographicWarp(northMat);
+  const northMarker = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), northMat);
+  northMarker.position.set(...construction.northXYZ);
+  northMarker.renderOrder = 999;
+  group.add(northMarker);
+  const northLabel = makeTextSprite('N (horizon)', { color: '#666', size: 22, scale: 0.16 });
+  northLabel.position.copy(northMarker.position).multiplyScalar(1.15);
+  group.add(northLabel);
+
+  const houses = construction.houses.map((h) => {
+    const divisionMat = new THREE.MeshBasicMaterial({ color: REGIO_COLOR });
+    applyStereographicWarp(divisionMat);
+    const divisionMarker = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), divisionMat);
+    divisionMarker.position.set(...h.divisionXYZ);
+    divisionMarker.visible = false;
+    group.add(divisionMarker);
+
+    const circleMesh = emptyTube(REGIO_COLOR); // filled in progressively by revealHouseCirclePartial
+    circleMesh.visible = false;
+    group.add(circleMesh);
+
+    const cuspMat = new THREE.MeshBasicMaterial({ color: REGIO_COLOR });
+    applyStereographicWarp(cuspMat);
+    const cuspMarker = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), cuspMat);
+    cuspMarker.position.set(...h.cuspXYZ);
+    cuspMarker.visible = false;
+    group.add(cuspMarker);
+
+    const cuspLabel = makeTextSprite(`Cusp ${h.house}`, { color: '#a21caf', size: 24, weight: '700', scale: 0.18 });
+    cuspLabel.position.copy(cuspMarker.position).multiplyScalar(1.13);
+    cuspLabel.visible = false;
+    group.add(cuspLabel);
+
+    const cuspTick = buildCuspTick(h.cuspTickXYZ, REGIO_COLOR);
+    group.add(cuspTick);
+
+    return { ...h, divisionMarker, circleMesh, cuspMarker, cuspLabel, cuspTick };
+  });
+
+  return { group, northMarker, houses };
+}
+
+export function revealHouseCirclePartial(houseEntry, count) {
+  growTube(houseEntry.circleMesh, houseEntry.circlePoints, count);
+}
+
+export const disposeRegiomontanusConstruction = disposeConstructionGroup;
+
+// Visualizes computePlacidusConstruction (astro.js): the 4 angular cusps
+// (ASC/IC/DSC/MC — shown immediately, not animated, since they're just the
+// already-known angles) plus each of the 8 non-angular cusps' curved locus
+// — the points across declination that have completed that cusp's target
+// fraction of their own semi-arc — and where each locus meets the
+// ecliptic. A house missing from construction.curves was undefined at this
+// latitude/date (circumpolar cutoff) and is simply not built.
+export function buildPlacidusConstruction(construction) {
+  const group = new THREE.Group();
+
+  const angleLabelByHouse = { 1: 'ASC', 4: 'IC', 7: 'DSC', 10: 'MC' };
+  const angleMarkers = [];
+  for (const [houseStr, label] of Object.entries(angleLabelByHouse)) {
+    const house = Number(houseStr);
+    const xyz = construction.angleXYZByHouse[house];
+    const cuspMat = new THREE.MeshBasicMaterial({ color: PLACIDUS_COLOR });
+    applyStereographicWarp(cuspMat);
+    const cuspMarker = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), cuspMat);
+    cuspMarker.position.set(...xyz);
+    cuspMarker.visible = false; // shown all at once when the animation starts — see startPlacidusConstruction
+    group.add(cuspMarker);
+
+    const cuspLabel = makeTextSprite(`${label} (Cusp ${house})`, { color: '#0e7490', size: 24, weight: '700', scale: 0.18 });
+    cuspLabel.position.copy(cuspMarker.position).multiplyScalar(1.13);
+    cuspLabel.visible = false;
+    group.add(cuspLabel);
+
+    const cuspTick = buildCuspTick(construction.angleTickByHouse[house], PLACIDUS_COLOR);
+    group.add(cuspTick);
+
+    angleMarkers.push({ house, label, cuspMarker, cuspLabel, cuspTick });
+  }
+
+  const houses = Object.values(construction.curves).map((c) => {
+    const curveMesh = emptyTube(PLACIDUS_COLOR); // filled in progressively by revealPlacidusCurvePartial
+    curveMesh.visible = false;
+    group.add(curveMesh);
+
+    const cuspMat = new THREE.MeshBasicMaterial({ color: PLACIDUS_COLOR });
+    applyStereographicWarp(cuspMat);
+    const cuspMarker = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), cuspMat);
+    cuspMarker.position.set(...c.cuspXYZ);
+    cuspMarker.visible = false;
+    group.add(cuspMarker);
+
+    const cuspLabel = makeTextSprite(`Cusp ${c.house}`, { color: '#0e7490', size: 24, weight: '700', scale: 0.18 });
+    cuspLabel.position.copy(cuspMarker.position).multiplyScalar(1.13);
+    cuspLabel.visible = false;
+    group.add(cuspLabel);
+
+    const cuspTick = buildCuspTick(c.cuspTickXYZ, PLACIDUS_COLOR);
+    group.add(cuspTick);
+
+    return { ...c, curveMesh, cuspMarker, cuspLabel, cuspTick };
+  });
+  // Sweep order: outward from the angles on both sides, matching how a
+  // person would naturally trisect each quadrant one at a time.
+  houses.sort((a, b) => a.house - b.house);
+
+  return { group, angleMarkers, houses };
+}
+
+export function revealPlacidusCurvePartial(houseEntry, count) {
+  growTube(houseEntry.curveMesh, houseEntry.curvePoints, count);
+}
+
+export const disposePlacidusConstruction = disposeConstructionGroup;
+
 // A small live-updating marker for wherever the true Ascendant actually is
 // right now — distinct from the frozen natal ASC angle marker (which stays
 // put during day-rotation playback, since it's the fixed primary-direction

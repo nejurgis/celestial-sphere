@@ -959,6 +959,194 @@ export function computeRegiomontanusHouses(date, observer, angles, radius = 1) {
   return cusps; // { 1..12: ecliptic longitude in degrees }
 }
 
+// Rodrigues' rotation formula — rotates unit-or-not vector v by angle theta
+// (radians) around unit axis `axis`. Used below to trace out a FULL great
+// circle (not just find where it crosses something) by spinning the
+// division point all the way around its own house-circle's axis.
+function rotateAroundAxis(v, axis, theta) {
+  const cosT = Math.cos(theta), sinT = Math.sin(theta);
+  const cr = cross3(axis, v);
+  const dp = dot3(axis, v);
+  return [
+    v[0] * cosT + cr[0] * sinT + axis[0] * dp * (1 - cosT),
+    v[1] * cosT + cr[1] * sinT + axis[1] * dp * (1 - cosT),
+    v[2] * cosT + cr[2] * sinT + axis[2] * dp * (1 - cosT),
+  ];
+}
+
+// Every intermediate object behind computeRegiomontanusHouses above — the
+// 12 equal 30° equatorial division points (starting at RAMC), each one's
+// full "house circle" (the great circle through it and the North/South
+// horizon points — NOT the celestial pole, the actual local horizon's own
+// N/S), and where each circle meets the ecliptic. Built for the "how
+// Regiomontanus works" animated construction (see buildRegiomontanusConstruction
+// in scene.js) — the live chart itself still uses the cheaper
+// computeRegiomontanusHouses, whose already-verified cusp longitudes this
+// reuses directly rather than re-deriving them (avoids re-solving the
+// house-vs-house+6 disambiguation problem computeRegiomontanusHouses'
+// own `between()` check already handles).
+//
+// offsetDeg → house mapping: RAMC itself (offset 0) IS house 10 (MC) by
+// definition, and house numbers count DOWN from there as offset increases
+// (10,11,12,1,2,...,9) — verified against computeRegiomontanusHouses'
+// own PAIRS table (offset 30 → houses [11,5], offset 120 → [2,8], etc.).
+export function computeRegiomontanusConstruction(date, observer, angles, radius = 1) {
+  const cusps = computeRegiomontanusHouses(date, observer, angles, radius);
+  const ramcHours = angles.mc.ra;
+  const NORTH = altAzToXYZ(0, 0, radius); // North point of the LOCAL HORIZON, not the celestial pole
+  const CIRCLE_STEPS = 180;
+
+  const houses = [];
+  for (let house = 1; house <= 12; house++) {
+    const offsetDeg = (((house - 10) * 30) % 360 + 360) % 360;
+    const raHours = (((ramcHours + offsetDeg / 15) % 24) + 24) % 24;
+    const hz = horizonOf(date, observer, raHours, 0); // dec=0 — a point ON THE CELESTIAL EQUATOR
+    const divisionXYZ = altAzToXYZ(hz.altitude, hz.azimuth, radius);
+    const axis = norm3(cross3(NORTH, divisionXYZ));
+
+    const circlePoints = [];
+    for (let i = 0; i <= CIRCLE_STEPS; i++) {
+      circlePoints.push(rotateAroundAxis(divisionXYZ, axis, (i / CIRCLE_STEPS) * 2 * Math.PI));
+    }
+
+    const cuspDeg = cusps[house];
+    const cuspEq = eclipticPointToEquatorial(cuspDeg, 0, date);
+    const cuspH = horizonOf(date, observer, cuspEq.ra, cuspEq.dec);
+    const cuspXYZ = altAzToXYZ(cuspH.altitude, cuspH.azimuth, radius);
+    // A short tick crossing the zodiac band's own width (±4° elat, same as
+    // computeZodiacBand) at the cusp's longitude — same helper the live ASC
+    // crosshair uses, reused here so a cusp reads as "this exact point
+    // across the sign," not just a ball floating near the ribbon.
+    const cuspTickXYZ = computeAscPerpendicular(cuspDeg, date, observer, radius).points.map((p) => p.xyz);
+
+    houses.push({ house, offsetDeg, raHours, divisionXYZ, circlePoints, cuspDeg, cuspXYZ, cuspTickXYZ });
+  }
+  // Sorted by offsetDeg (0→330, i.e. 10,11,12,1,2,...,9) — the natural
+  // "sweep around the equator from RAMC" order to animate in, rather than
+  // jumping around by house NUMBER.
+  houses.sort((a, b) => a.offsetDeg - b.offsetDeg);
+
+  return { ramcHours, northXYZ: NORTH, houses };
+}
+
+// ── Placidus construction (pedagogical) ───────────────────────────────────
+// Placidus is a TEMPORAL construction, unlike Regiomontanus's spatial one
+// above: a cusp is the ecliptic point that has completed a given FRACTION
+// (1/3 or 2/3) of its OWN diurnal or nocturnal semi-arc — not a point on
+// any great circle at all. Reuses this file's already-verified Placidus
+// primary-direction math (semiArcsOf/placidusQuadrantAngle/hourAngleDeg
+// above) rather than re-deriving the trisection from scratch.
+//
+// Target "mundo angle" (see placidusQuadrantAngle's own 0=MC/±90=ASC,DSC/
+// ±180=IC convention) for each of the 8 non-angular cusps — houses 11,12
+// trisect the MC→ASC quadrant; 2,3 trisect ASC→IC; 5,6 trisect IC→DSC;
+// 8,9 trisect DSC→MC. Verified against computeRegiomontanusHouses' own
+// RANGE table (same quadrant pairings: 11/12↔[mc,asc], 2/3↔[asc,ic], etc.)
+const PLACIDUS_CUSP_TARGET_M = { 11: -30, 12: -60, 2: -120, 3: -150, 5: 150, 6: 120, 8: 60, 9: 30 };
+
+// placidusQuadrantAngle(H, sDiurnal) is monotonically increasing in H
+// across H∈(-180,180] (its four quadrant branches connect continuously at
+// the boundaries) — bisect for the H whose M matches targetM, for a FIXED
+// sDiurnal. Used to trace the curved locus below at each declination
+// (where sDiurnal is fixed per point, unlike the cusp search further down
+// where declination — and hence sDiurnal — varies WITH the unknown itself).
+function placidusInverseH(targetM, sDiurnal) {
+  let lo = -180, hi = 180;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (placidusQuadrantAngle(mid, sDiurnal) < targetM) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Every intermediate object behind a Placidus house cusp — the curved
+// locus of points (across declination) that have completed the cusp's own
+// target fraction of their semi-arc, and where that locus happens to cross
+// the ecliptic (the actual cusp). Built for the "how Placidus is built"
+// animated construction (see buildPlacidusConstruction in scene.js) — nothing
+// here feeds the live chart, which only offers Regiomontanus/whole-sign.
+//
+// A point's semi-arc is only defined while it actually rises and sets
+// (cos(S)=-tan(lat)tan(dec) must stay in [-1,1]) — circumpolar declinations
+// (|dec| > 90-|lat|, the co-latitude) never cross the horizon at all, so
+// Placidus is undefined there. maxDecDeg below is that exact cutoff, not
+// an approximation — the curves are clipped hard at it, and a cusp whose
+// OWN ecliptic crossing would require going past it is left undefined
+// (`houses[house]` stays unset) rather than guessed at.
+export function computePlacidusConstruction(date, observer, angles, radius = 1) {
+  const ramcHours = angles.mc.ra;
+  const latDeg = observer.latitude;
+  const maxDecDeg = 90 - Math.abs(latDeg);
+
+  const STEPS_ECLIPTIC = 1440; // finer than Regiomontanus's 720 — these curves can bend sharply near the cutoff
+  const fineEcliptic = [];
+  for (let i = 0; i <= STEPS_ECLIPTIC; i++) {
+    const t = (i / STEPS_ECLIPTIC) * 360;
+    const eq = eclipticPointToEquatorial(t, 0, date);
+    fineEcliptic.push({ deg: t, ra: eq.ra, dec: eq.dec });
+  }
+  const mAt = (entry) => placidusQuadrantAngle(hourAngleDeg(entry.ra, ramcHours), semiArcsOf(entry.dec, latDeg).diurnal);
+
+  const houses = { 1: angles.asc.deg, 4: angles.ic.deg, 7: angles.dsc.deg, 10: angles.mc.deg };
+  // xyz for the 4 angular cusps too — same shape as each curve's own
+  // {house, cuspDeg, cuspXYZ} below, so the scene-builder can treat all 12
+  // uniformly (the angular ones just skip the curve-growth animation).
+  const angleXYZByHouse = { 1: angles.asc.xyz, 4: angles.ic.xyz, 7: angles.dsc.xyz, 10: angles.mc.xyz };
+  const angleDegByHouse = { 1: angles.asc.deg, 4: angles.ic.deg, 7: angles.dsc.deg, 10: angles.mc.deg };
+  const angleTickByHouse = Object.fromEntries(
+    Object.entries(angleDegByHouse).map(([h, deg]) => [h, computeAscPerpendicular(deg, date, observer, radius).points.map((p) => p.xyz)]),
+  );
+  const curves = {};
+
+  for (const [houseStr, targetM] of Object.entries(PLACIDUS_CUSP_TARGET_M)) {
+    const house = Number(houseStr);
+
+    // The cusp itself: where the ecliptic's own M(λ) crosses targetM — same
+    // sample-then-bisect style as computeRegiomontanusHouses' circleCrossings.
+    // The `Math.abs(ga - gb) < 180` guard rejects the ±180 (IC) wraparound
+    // artifact (a genuine step-to-step crossing changes by a small fraction
+    // of a degree at this sampling density; the wrap jumps by ~360) —
+    // none of our 8 targets sit near that seam, so a real crossing never
+    // gets caught by this guard.
+    let cuspDeg = null;
+    for (let i = 0; i < fineEcliptic.length - 1; i++) {
+      const a = fineEcliptic[i], b = fineEcliptic[i + 1];
+      const ga = mAt(a) - targetM, gb = mAt(b) - targetM;
+      if ((ga >= 0) !== (gb >= 0) && Math.abs(ga - gb) < 180) {
+        const frac = ga / (ga - gb);
+        cuspDeg = (((a.deg + frac * (b.deg - a.deg)) % 360) + 360) % 360;
+        break;
+      }
+    }
+    if (cuspDeg == null) continue; // undefined at this latitude/date — left out entirely, not guessed at
+
+    // The curved locus itself, NOT confined to the ecliptic — for each
+    // valid declination, the point that has completed exactly this
+    // fraction of ITS OWN semi-arc. This is what actually looks different
+    // from Regiomontanus's great circles: a genuinely curved sheet, hard-
+    // clipped at ±maxDecDeg rather than continuing indefinitely.
+    const CURVE_STEPS = 120;
+    const curvePoints = [];
+    for (let i = 0; i <= CURVE_STEPS; i++) {
+      const dec = -maxDecDeg + (i / CURVE_STEPS) * (2 * maxDecDeg);
+      const H = placidusInverseH(targetM, semiArcsOf(dec, latDeg).diurnal);
+      const raHours = (((ramcHours - H / 15) % 24) + 24) % 24;
+      const hz = horizonOf(date, observer, raHours, dec);
+      curvePoints.push(altAzToXYZ(hz.altitude, hz.azimuth, radius));
+    }
+
+    const cuspEq = eclipticPointToEquatorial(cuspDeg, 0, date);
+    const cuspH = horizonOf(date, observer, cuspEq.ra, cuspEq.dec);
+    // Same zodiac-band-width tick as Regiomontanus's own cusps — see that
+    // function's identical line for why.
+    const cuspTickXYZ = computeAscPerpendicular(cuspDeg, date, observer, radius).points.map((p) => p.xyz);
+    houses[house] = cuspDeg;
+    curves[house] = { house, targetM, curvePoints, cuspDeg, cuspXYZ: altAzToXYZ(cuspH.altitude, cuspH.azimuth, radius), cuspTickXYZ };
+  }
+
+  return { ramcHours, maxDecDeg, houses, angleXYZByHouse, angleTickByHouse, curves };
+}
+
 // Which house (1-12) an ecliptic longitude falls in, given a cusps object
 // from computeRegiomontanusHouses. A point exactly on cusp h belongs to
 // house h (the standard convention — a house starts at its own cusp).
