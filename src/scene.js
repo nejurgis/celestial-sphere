@@ -789,40 +789,45 @@ export const DIRECTION_COLORS = { active: DIRECTION_COLOR, hit: DIRECTION_HIT_CO
 // animate()) reveal them one house at a time.
 const REGIO_COLOR = 0xd946ef;    // magenta — Regiomontanus's great circles
 const PLACIDUS_COLOR = 0x06b6d4; // cyan — Placidus's curved loci; deliberately far from magenta so running one after the other reads as a clear contrast
-const CONSTRUCTION_TUBE_RADIUS = 0.028; // real 3D tube, not a THREE.Line — Line's linewidth is ignored on most platforms, see tubeFromPoints's own header
 
-// Replaces mesh's geometry with a tube through the first `count` points of
-// `points` — called every animate() frame while a curve/circle is
-// "growing" in. Same rebuild-small-geometry-each-frame approach as the
-// live ASC crosshair and direction sweep lines above.
-function growTube(mesh, points, count) {
+// Screen-space lines (sky-shaders.js — the SAME system the equatorial/
+// azimuthal grids already use), not THREE.TubeGeometry. A tube's per-call
+// cost isn't just the JS math — TubeGeometry generates a full swept
+// circular cross-section (radialSegments × tubularSegments vertices, each
+// needing a Frenet-frame normal) and re-uploads that as a brand-new WebGL
+// buffer — for a ~180-point circle that's 8×181=1448 vertices, and disposing
+// + reallocating a GPU buffer that size every single animate() frame during
+// day-rotation tracking is exactly the kind of per-frame cost that shows up
+// as visible stutter even when it profiles as "fast" JS-side (the GPU-side
+// upload/driver work isn't captured by a plain performance.now() wrap). A
+// screen-space line needs only 4×(N-1) vertices from plain array fills — no
+// curve/frame math — and (bonus) gets a constant PIXEL width instead of
+// shrinking/growing with zoom, matching the grids' own look. Materials are
+// still MeshBasicMaterial-equivalent-cheap per house (a ShaderMaterial, but
+// a tiny stateless one) — buildRegiomontanusConstruction/
+// buildPlacidusConstruction below create ONE shared material per system
+// (not one per house) for exactly this reason.
+function growScreenLine(mesh, points, count) {
   const pts = points.slice(0, Math.max(2, count));
-  const curve = new THREE.CatmullRomCurve3(pts.map(([x, y, z]) => new THREE.Vector3(x, y, z)), false);
+  const fresh = buildScreenLineMesh(pts, mesh.material); // only its geometry is used below; the wrapper Mesh itself is thrown away
   mesh.geometry.dispose();
-  mesh.geometry = new THREE.TubeGeometry(curve, Math.max(2, pts.length), CONSTRUCTION_TUBE_RADIUS, 8, false);
+  mesh.geometry = fresh.geometry;
   mesh.visible = true;
 }
 
-function emptyTube(color) {
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
-  applyStereographicWarp(mat);
-  return new THREE.Mesh(new THREE.BufferGeometry(), mat);
+function emptyScreenLine(material) {
+  return new THREE.Mesh(new THREE.BufferGeometry(), material);
 }
 
 // A short tick crossing the zodiac band's own width at a cusp's longitude
 // — see computeAscPerpendicular's reuse in astro.js for why this is the
-// SAME helper the live ASC crosshair uses. Thinner than the main circle/
-// curve tubes so it doesn't visually compete with them, but still real
-// geometry (not a THREE.Line) so it survives the stereographic warp/fov
-// changes the same way everything else here does.
+// SAME helper the live ASC crosshair uses.
 function updateCuspTick(mesh, points) {
-  const curve = new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)), false);
-  mesh.geometry.dispose();
-  mesh.geometry = new THREE.TubeGeometry(curve, points.length, CONSTRUCTION_TUBE_RADIUS * 0.6, 6, false);
+  growScreenLine(mesh, points, points.length);
 }
 
-function buildCuspTick(points, color) {
-  const mesh = emptyTube(color);
+function buildCuspTick(points, material) {
+  const mesh = emptyScreenLine(material);
   updateCuspTick(mesh, points);
   mesh.visible = false;
   return mesh;
@@ -845,6 +850,12 @@ export function disposeConstructionGroup(construction) {
 // and where that circle meets the ecliptic.
 export function buildRegiomontanusConstruction(construction) {
   const group = new THREE.Group();
+  // ONE shared material for all 12 circles (and another for the 12 thinner
+  // ticks) rather than one each — cheaper, and both need their own
+  // uResolution kept current by main.js's animate() loop the same way the
+  // equatorial/azimuthal grids' own materials already are.
+  const lineMaterial = createScreenLineMaterial({ color: REGIO_COLOR, lineWidth: 3, opacity: 0.85 });
+  const tickMaterial = createScreenLineMaterial({ color: REGIO_COLOR, lineWidth: 2, opacity: 0.85 });
 
   const northMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
   applyStereographicWarp(northMat);
@@ -864,7 +875,7 @@ export function buildRegiomontanusConstruction(construction) {
     divisionMarker.visible = false;
     group.add(divisionMarker);
 
-    const circleMesh = emptyTube(REGIO_COLOR); // filled in progressively by revealHouseCirclePartial
+    const circleMesh = emptyScreenLine(lineMaterial); // filled in progressively by revealHouseCirclePartial
     circleMesh.visible = false;
     group.add(circleMesh);
 
@@ -880,17 +891,17 @@ export function buildRegiomontanusConstruction(construction) {
     cuspLabel.visible = false;
     group.add(cuspLabel);
 
-    const cuspTick = buildCuspTick(h.cuspTickXYZ, REGIO_COLOR);
+    const cuspTick = buildCuspTick(h.cuspTickXYZ, tickMaterial);
     group.add(cuspTick);
 
     return { ...h, divisionMarker, circleMesh, cuspMarker, cuspLabel, cuspTick };
   });
 
-  return { group, northMarker, northLabel, houses };
+  return { group, northMarker, northLabel, houses, lineMaterial, tickMaterial };
 }
 
 export function revealHouseCirclePartial(houseEntry, count) {
-  growTube(houseEntry.circleMesh, houseEntry.circlePoints, count);
+  growScreenLine(houseEntry.circleMesh, houseEntry.circlePoints, count);
 }
 
 export const disposeRegiomontanusConstruction = disposeConstructionGroup;
@@ -928,7 +939,7 @@ export function updateRegiomontanusConstruction(built, construction) {
     h.cuspTickXYZ = src.cuspTickXYZ;
     h.raHours = src.raHours;
     h.divisionMarker.position.set(...src.divisionXYZ);
-    growTube(h.circleMesh, src.circlePoints, src.circlePoints.length);
+    growScreenLine(h.circleMesh, src.circlePoints, src.circlePoints.length);
     h.cuspMarker.position.set(...src.cuspXYZ);
     h.cuspLabel.position.copy(h.cuspMarker.position).multiplyScalar(1.13);
     updateCuspTick(h.cuspTick, src.cuspTickXYZ);
@@ -944,6 +955,8 @@ export function updateRegiomontanusConstruction(built, construction) {
 // latitude/date (circumpolar cutoff) and is simply not built.
 export function buildPlacidusConstruction(construction) {
   const group = new THREE.Group();
+  const lineMaterial = createScreenLineMaterial({ color: PLACIDUS_COLOR, lineWidth: 3, opacity: 0.85 });
+  const tickMaterial = createScreenLineMaterial({ color: PLACIDUS_COLOR, lineWidth: 2, opacity: 0.85 });
 
   const angleLabelByHouse = { 1: 'ASC', 4: 'IC', 7: 'DSC', 10: 'MC' };
   const angleMarkers = [];
@@ -962,14 +975,14 @@ export function buildPlacidusConstruction(construction) {
     cuspLabel.visible = false;
     group.add(cuspLabel);
 
-    const cuspTick = buildCuspTick(construction.angleTickByHouse[house], PLACIDUS_COLOR);
+    const cuspTick = buildCuspTick(construction.angleTickByHouse[house], tickMaterial);
     group.add(cuspTick);
 
     angleMarkers.push({ house, label, cuspMarker, cuspLabel, cuspTick });
   }
 
   const houses = Object.values(construction.curves).map((c) => {
-    const curveMesh = emptyTube(PLACIDUS_COLOR); // filled in progressively by revealPlacidusCurvePartial
+    const curveMesh = emptyScreenLine(lineMaterial); // filled in progressively by revealPlacidusCurvePartial
     curveMesh.visible = false;
     group.add(curveMesh);
 
@@ -985,7 +998,7 @@ export function buildPlacidusConstruction(construction) {
     cuspLabel.visible = false;
     group.add(cuspLabel);
 
-    const cuspTick = buildCuspTick(c.cuspTickXYZ, PLACIDUS_COLOR);
+    const cuspTick = buildCuspTick(c.cuspTickXYZ, tickMaterial);
     group.add(cuspTick);
 
     return { ...c, curveMesh, cuspMarker, cuspLabel, cuspTick };
@@ -994,11 +1007,11 @@ export function buildPlacidusConstruction(construction) {
   // person would naturally trisect each quadrant one at a time.
   houses.sort((a, b) => a.house - b.house);
 
-  return { group, angleMarkers, houses };
+  return { group, angleMarkers, houses, lineMaterial, tickMaterial };
 }
 
 export function revealPlacidusCurvePartial(houseEntry, count) {
-  growTube(houseEntry.curveMesh, houseEntry.curvePoints, count);
+  growScreenLine(houseEntry.curveMesh, houseEntry.curvePoints, count);
 }
 
 export const disposePlacidusConstruction = disposeConstructionGroup;
@@ -1036,7 +1049,7 @@ export function updatePlacidusConstruction(built, construction) {
     h.cuspDeg = src.cuspDeg;
     h.cuspXYZ = src.cuspXYZ;
     h.cuspTickXYZ = src.cuspTickXYZ;
-    growTube(h.curveMesh, src.curvePoints, src.curvePoints.length);
+    growScreenLine(h.curveMesh, src.curvePoints, src.curvePoints.length);
     h.cuspMarker.position.set(...src.cuspXYZ);
     h.cuspLabel.position.copy(h.cuspMarker.position).multiplyScalar(1.13);
     updateCuspTick(h.cuspTick, src.cuspTickXYZ);

@@ -1159,14 +1159,22 @@ function animate() {
   if (starFieldMeshes[0]) starFieldMeshes[0].material.uniforms.uSizeScale.value = sizeScale;
   if (cachedSunMarker) cachedSunMarker.mesh.material.uniforms.uSizeScale.value = sizeScale;
 
-  // Equatorial/azimuthal grid screen-space line width (sky-shaders.js) also
-  // needs the current drawing-buffer size in pixels, kept live for window
-  // resize.
-  if (equatorialGridMaterial || azimuthalGridMaterial) {
+  // Equatorial/azimuthal grid AND house-construction screen-space line
+  // width (sky-shaders.js) also need the current drawing-buffer size in
+  // pixels, kept live for window resize.
+  if (equatorialGridMaterial || azimuthalGridMaterial || regioConstruction || placidusConstruction) {
     const dpr = renderer.getPixelRatio();
     const res = [canvas.parentElement.clientWidth * dpr, canvas.parentElement.clientHeight * dpr];
     if (equatorialGridMaterial) equatorialGridMaterial.uniforms.uResolution.value.set(...res);
     if (azimuthalGridMaterial) azimuthalGridMaterial.uniforms.uResolution.value.set(...res);
+    if (regioConstruction) {
+      regioConstruction.lineMaterial.uniforms.uResolution.value.set(...res);
+      regioConstruction.tickMaterial.uniforms.uResolution.value.set(...res);
+    }
+    if (placidusConstruction) {
+      placidusConstruction.lineMaterial.uniforms.uResolution.value.set(...res);
+      placidusConstruction.tickMaterial.uniforms.uResolution.value.set(...res);
+    }
   }
 
   if (centerView && stelInstance) {
