@@ -727,6 +727,7 @@ function setDayRotationDeg(deg) {
     dayRotationReadout.textContent = `${formatClockTime(fakeDate)} (+${(dayRotationDeg / 15).toFixed(1)}h)`;
     const liveState = computeSkyState(fakeDate, natalObserver.latitude, natalObserver.longitude, SPHERE_RADIUS);
     dayRotationAscReadout.textContent = liveState.asc ? formatEclipticDegree(liveState.asc.deg) : '—';
+    refreshActiveConstructionAtRotation(fakeDate, liveState);
 
     if (liveAscMarker && liveState.asc) {
       const visible = dayRotationDeg !== 0;
@@ -1739,6 +1740,71 @@ placidusConstructBtn.addEventListener('click', () => {
   if (placidusConstruction) stopPlacidusConstruction(); else startPlacidusConstruction();
 });
 placidusStopBtn.addEventListener('click', stopPlacidusConstruction);
+
+// ── Live house-cusp tracking during day-rotation ──────────────────────────
+// The NATAL MC/IC/ASC/DSC (and RAMC, which every house cusp is ultimately
+// measured from) all genuinely change as the day rotates — unlike the
+// zodiac band/planets/ecliptic (reprojectRotatables' own rigid pole-axis
+// rotation, correct because THEIR positions are fixed-RA/Dec points simply
+// viewed through a later horizon), a house circle is defined by one FIXED
+// point (the horizon's own North) and one point that itself moves with
+// time (the equatorial division point at RAMC+offset) — the circle
+// through them does not just rotate, its shape genuinely changes. So
+// keeping this "accurate" means recomputing the whole construction at the
+// rotated moment's real angles, not reprojecting the existing geometry.
+// Only runs once a construction has FINISHED its own reveal animation
+// (mid-reveal + also-rotating would be two animations fighting over the
+// same geometry) — throttled (not every animate() frame) since Placidus's
+// own cusp search alone is tens of thousands of trig evaluations, matching
+// the DATE_STEP_REBUILD_INTERVAL_MS-style throttle already used for the
+// date-slider's own continuous-drag rebuilds.
+const CONSTRUCTION_REFRESH_INTERVAL_MS = 200;
+let constructionRefreshLastAt = 0;
+
+function fullyRevealRegioConstruction(built) {
+  for (const h of built.houses) {
+    h.divisionMarker.visible = true;
+    revealHouseCirclePartial(h, h.circlePoints.length);
+    h.cuspMarker.visible = true;
+    h.cuspLabel.visible = true;
+    h.cuspTick.visible = true;
+  }
+}
+function fullyRevealPlacidusConstruction(built) {
+  for (const a of built.angleMarkers) {
+    a.cuspMarker.visible = true;
+    a.cuspLabel.visible = true;
+    a.cuspTick.visible = true;
+  }
+  for (const h of built.houses) {
+    revealPlacidusCurvePartial(h, h.curvePoints.length);
+    h.cuspMarker.visible = true;
+    h.cuspLabel.visible = true;
+    h.cuspTick.visible = true;
+  }
+}
+
+function refreshActiveConstructionAtRotation(fakeDate, liveState) {
+  if (!(regioConstruction && !regioAnimActive) && !(placidusConstruction && !placidusAnimActive)) return;
+  const now = performance.now();
+  if (now - constructionRefreshLastAt < CONSTRUCTION_REFRESH_INTERVAL_MS) return;
+  constructionRefreshLastAt = now;
+  const angles = { mc: liveState.mc, ic: liveState.ic, asc: liveState.asc, dsc: liveState.dsc };
+
+  if (regioConstruction && !regioAnimActive) {
+    scene.remove(regioConstruction.group);
+    disposeRegiomontanusConstruction(regioConstruction);
+    regioConstruction = buildRegiomontanusConstruction(computeRegiomontanusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS));
+    scene.add(regioConstruction.group);
+    fullyRevealRegioConstruction(regioConstruction);
+  } else if (placidusConstruction && !placidusAnimActive) {
+    scene.remove(placidusConstruction.group);
+    disposePlacidusConstruction(placidusConstruction);
+    placidusConstruction = buildPlacidusConstruction(computePlacidusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS));
+    scene.add(placidusConstruction.group);
+    fullyRevealPlacidusConstruction(placidusConstruction);
+  }
+}
 
 // ── Directions table ("Prognosis") ───────────────────────────────────────
 // Every promissor/significator/aspect combination, chronologically — not
