@@ -16,8 +16,8 @@ import {
   buildAspectPlane, buildLiveAscMarker, buildAscPerpendicularLine, updateAscPerpendicularLine, buildStarField, elementColorForDeg,
   setEquatorialSphereOrientation, DIRECTION_COLORS, SPHERE_RADIUS, starGlowTexture, sunHaloTexture,
   buildEquatorialGrid, buildAzimuthalGrid,
-  buildRegiomontanusConstruction, revealHouseCirclePartial, disposeRegiomontanusConstruction,
-  buildPlacidusConstruction, revealPlacidusCurvePartial, disposePlacidusConstruction,
+  buildRegiomontanusConstruction, revealHouseCirclePartial, disposeRegiomontanusConstruction, updateRegiomontanusConstruction,
+  buildPlacidusConstruction, revealPlacidusCurvePartial, disposePlacidusConstruction, updatePlacidusConstruction,
 } from './scene.js';
 import { renderChart2D } from './chart2d.js';
 import { updateTextSprite } from './labels.js';
@@ -1754,55 +1754,33 @@ placidusStopBtn.addEventListener('click', stopPlacidusConstruction);
 // rotated moment's real angles, not reprojecting the existing geometry.
 // Only runs once a construction has FINISHED its own reveal animation
 // (mid-reveal + also-rotating would be two animations fighting over the
-// same geometry) — throttled (not every animate() frame) since Placidus's
-// own cusp search alone is tens of thousands of trig evaluations, matching
-// the DATE_STEP_REBUILD_INTERVAL_MS-style throttle already used for the
-// date-slider's own continuous-drag rebuilds.
-const CONSTRUCTION_REFRESH_INTERVAL_MS = 200;
-let constructionRefreshLastAt = 0;
-
-function fullyRevealRegioConstruction(built) {
-  for (const h of built.houses) {
-    h.divisionMarker.visible = true;
-    revealHouseCirclePartial(h, h.circlePoints.length);
-    h.cuspMarker.visible = true;
-    h.cuspLabel.visible = true;
-    h.cuspTick.visible = true;
-  }
-}
-function fullyRevealPlacidusConstruction(built) {
-  for (const a of built.angleMarkers) {
-    a.cuspMarker.visible = true;
-    a.cuspLabel.visible = true;
-    a.cuspTick.visible = true;
-  }
-  for (const h of built.houses) {
-    revealPlacidusCurvePartial(h, h.curvePoints.length);
-    h.cuspMarker.visible = true;
-    h.cuspLabel.visible = true;
-    h.cuspTick.visible = true;
-  }
-}
+// same geometry). Measured ~7-11ms even for Placidus (the pricier of the
+// two — its own cusp search is tens of thousands of trig evaluations) —
+// well inside a frame budget, so this runs every animate() frame, same as
+// the zodiac band's own reprojection; an earlier throttled version (every
+// 200ms) made the cusps visibly lag behind the band's own smooth rotation.
 
 function refreshActiveConstructionAtRotation(fakeDate, liveState) {
   if (!(regioConstruction && !regioAnimActive) && !(placidusConstruction && !placidusAnimActive)) return;
-  const now = performance.now();
-  if (now - constructionRefreshLastAt < CONSTRUCTION_REFRESH_INTERVAL_MS) return;
-  constructionRefreshLastAt = now;
   const angles = { mc: liveState.mc, ic: liveState.ic, asc: liveState.asc, dsc: liveState.dsc };
 
   if (regioConstruction && !regioAnimActive) {
-    scene.remove(regioConstruction.group);
-    disposeRegiomontanusConstruction(regioConstruction);
-    regioConstruction = buildRegiomontanusConstruction(computeRegiomontanusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS));
-    scene.add(regioConstruction.group);
-    fullyRevealRegioConstruction(regioConstruction);
+    updateRegiomontanusConstruction(regioConstruction, computeRegiomontanusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS));
   } else if (placidusConstruction && !placidusAnimActive) {
-    scene.remove(placidusConstruction.group);
-    disposePlacidusConstruction(placidusConstruction);
-    placidusConstruction = buildPlacidusConstruction(computePlacidusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS));
-    scene.add(placidusConstruction.group);
-    fullyRevealPlacidusConstruction(placidusConstruction);
+    const construction = computePlacidusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS);
+    const updatedInPlace = updatePlacidusConstruction(placidusConstruction, construction);
+    if (!updatedInPlace) {
+      // The AVAILABLE set of non-angular cusps itself changed (crossed the
+      // circumpolar cutoff mid-rotation) — needs new/removed scene
+      // objects, which the in-place updater deliberately doesn't attempt.
+      // Falls back to a full rebuild just for this one frame.
+      scene.remove(placidusConstruction.group);
+      disposePlacidusConstruction(placidusConstruction);
+      placidusConstruction = buildPlacidusConstruction(construction);
+      scene.add(placidusConstruction.group);
+      for (const a of placidusConstruction.angleMarkers) { a.cuspMarker.visible = true; a.cuspLabel.visible = true; a.cuspTick.visible = true; }
+      for (const h of placidusConstruction.houses) { revealPlacidusCurvePartial(h, h.curvePoints.length); h.cuspMarker.visible = true; h.cuspLabel.visible = true; h.cuspTick.visible = true; }
+    }
   }
 }
 

@@ -809,17 +809,21 @@ function emptyTube(color) {
   return new THREE.Mesh(new THREE.BufferGeometry(), mat);
 }
 
-// A short, fully-built (not growing) tick crossing the zodiac band's own
-// width at a cusp's longitude — see computeAscPerpendicular's reuse in
-// astro.js for why this is the SAME helper the live ASC crosshair uses.
-// Thinner than the main circle/curve tubes so it doesn't visually compete
-// with them, but still real geometry (not a THREE.Line) so it survives
-// the stereographic warp/fov changes the same way everything else here does.
-function buildCuspTick(points, color) {
-  const mesh = emptyTube(color);
+// A short tick crossing the zodiac band's own width at a cusp's longitude
+// — see computeAscPerpendicular's reuse in astro.js for why this is the
+// SAME helper the live ASC crosshair uses. Thinner than the main circle/
+// curve tubes so it doesn't visually compete with them, but still real
+// geometry (not a THREE.Line) so it survives the stereographic warp/fov
+// changes the same way everything else here does.
+function updateCuspTick(mesh, points) {
   const curve = new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)), false);
   mesh.geometry.dispose();
   mesh.geometry = new THREE.TubeGeometry(curve, points.length, CONSTRUCTION_TUBE_RADIUS * 0.6, 6, false);
+}
+
+function buildCuspTick(points, color) {
+  const mesh = emptyTube(color);
+  updateCuspTick(mesh, points);
   mesh.visible = false;
   return mesh;
 }
@@ -882,7 +886,7 @@ export function buildRegiomontanusConstruction(construction) {
     return { ...h, divisionMarker, circleMesh, cuspMarker, cuspLabel, cuspTick };
   });
 
-  return { group, northMarker, houses };
+  return { group, northMarker, northLabel, houses };
 }
 
 export function revealHouseCirclePartial(houseEntry, count) {
@@ -890,6 +894,46 @@ export function revealHouseCirclePartial(houseEntry, count) {
 }
 
 export const disposeRegiomontanusConstruction = disposeConstructionGroup;
+
+// Repositions/regeometries an EXISTING built construction to match a fresh
+// computeRegiomontanusConstruction result, in place — no scene.remove,
+// no dispose, no new materials or text sprites (a cusp label's TEXT is
+// always just "Cusp N", the house number, which never changes — only
+// WHERE it sits does). Every house's own great circle IS a genuinely
+// different circle at each moment (see main.js's own comment on why a
+// rigid rotation isn't valid here), so its tube geometry still has to be
+// rebuilt each call — but that's real geometry work, not scene-graph
+// churn, and is what actually costs the measured ~7-11ms, not the
+// churn. Used for live tracking during day-rotation playback: an earlier
+// version did a full teardown+rebuild every frame instead, which used
+// comparable CPU time but was visibly JERKY rather than smooth — texture
+// uploads for a dozen freshly-recreated labels and WebGL buffer alloc/
+// dealloc churn are exactly the kind of per-frame cost that shows up as
+// stutter even when the total is well inside the frame budget, unlike a
+// plain position/geometry update on already-resident GPU objects.
+// Regiomontanus always has exactly 12 houses regardless of date/location
+// (only Placidus can have cusps come and go — see updatePlacidusConstruction),
+// so a straight index-aligned loop is safe here (both arrays are sorted
+// the same way, by offsetDeg).
+export function updateRegiomontanusConstruction(built, construction) {
+  built.northMarker.position.set(...construction.northXYZ);
+  built.northLabel.position.copy(built.northMarker.position).multiplyScalar(1.15);
+  for (let i = 0; i < built.houses.length; i++) {
+    const h = built.houses[i];
+    const src = construction.houses[i];
+    h.divisionXYZ = src.divisionXYZ;
+    h.circlePoints = src.circlePoints;
+    h.cuspDeg = src.cuspDeg;
+    h.cuspXYZ = src.cuspXYZ;
+    h.cuspTickXYZ = src.cuspTickXYZ;
+    h.raHours = src.raHours;
+    h.divisionMarker.position.set(...src.divisionXYZ);
+    growTube(h.circleMesh, src.circlePoints, src.circlePoints.length);
+    h.cuspMarker.position.set(...src.cuspXYZ);
+    h.cuspLabel.position.copy(h.cuspMarker.position).multiplyScalar(1.13);
+    updateCuspTick(h.cuspTick, src.cuspTickXYZ);
+  }
+}
 
 // Visualizes computePlacidusConstruction (astro.js): the 4 angular cusps
 // (ASC/IC/DSC/MC — shown immediately, not animated, since they're just the
@@ -958,6 +1002,47 @@ export function revealPlacidusCurvePartial(houseEntry, count) {
 }
 
 export const disposePlacidusConstruction = disposeConstructionGroup;
+
+// Same in-place-update approach as updateRegiomontanusConstruction — see
+// its own header for why (avoids the per-frame scene-graph/texture churn
+// that made an earlier full-teardown-every-frame version visibly jerky).
+// Angular cusps (ASC/IC/DSC/MC) always exist, so those update
+// unconditionally. The 8 non-angular ones can genuinely come and go
+// (crossing the circumpolar cutoff mid-rotation) — if the AVAILABLE set
+// changed since `built` was created, that needs new/removed scene
+// objects, not just new positions, so this bails out (returns false) and
+// leaves it to the caller to fall back to a full rebuild for that one
+// frame; returns true when the common case (same houses, just moved)
+// was handled in place.
+export function updatePlacidusConstruction(built, construction) {
+  for (const a of built.angleMarkers) {
+    const xyz = construction.angleXYZByHouse[a.house];
+    a.cuspMarker.position.set(...xyz);
+    a.cuspLabel.position.copy(a.cuspMarker.position).multiplyScalar(1.13);
+    updateCuspTick(a.cuspTick, construction.angleTickByHouse[a.house]);
+  }
+
+  const freshByHouse = construction.curves;
+  const builtHouseNumbers = new Set(built.houses.map((h) => h.house));
+  const freshHouseNumbers = new Set(Object.keys(freshByHouse).map(Number));
+  const sameSet = builtHouseNumbers.size === freshHouseNumbers.size
+    && [...builtHouseNumbers].every((h) => freshHouseNumbers.has(h));
+  if (!sameSet) return false;
+
+  for (const h of built.houses) {
+    const src = freshByHouse[h.house];
+    h.targetM = src.targetM;
+    h.curvePoints = src.curvePoints;
+    h.cuspDeg = src.cuspDeg;
+    h.cuspXYZ = src.cuspXYZ;
+    h.cuspTickXYZ = src.cuspTickXYZ;
+    growTube(h.curveMesh, src.curvePoints, src.curvePoints.length);
+    h.cuspMarker.position.set(...src.cuspXYZ);
+    h.cuspLabel.position.copy(h.cuspMarker.position).multiplyScalar(1.13);
+    updateCuspTick(h.cuspTick, src.cuspTickXYZ);
+  }
+  return true;
+}
 
 // A small live-updating marker for wherever the true Ascendant actually is
 // right now — distinct from the frozen natal ASC angle marker (which stays
