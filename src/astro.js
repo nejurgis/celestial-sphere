@@ -1029,6 +1029,70 @@ export function computeRegiomontanusConstruction(date, observer, angles, radius 
   return { ramcHours, northXYZ: NORTH, houses };
 }
 
+// A planet's circle of position IN REGIOMONTANUS'S OWN SENSE: the great
+// circle through the planet's actual position and the horizon's own North/
+// South points — the exact same construction as a house arc above, just
+// through the planet instead of an equatorial division point (Alexey
+// Borealis, "Regiomontanus basics": "For any planet... draw a line through
+// it according to the same logic above"). NOT the same circle as
+// computePositionCircle above, which is Morinus's pole-to-pole hour circle
+// — different fixed axis, different tradition, same name in English.
+// Where this circle crosses the celestial equator is the planet's mundane
+// position; that point's own right ascension is its oblique ascension.
+function computeCircleOfPositionHorizon(date, observer, ra, dec, radius = 1, steps = 180) {
+  const NORTH = altAzToXYZ(0, 0, radius);
+  const hz = horizonOf(date, observer, ra, dec);
+  const planetXYZ = altAzToXYZ(hz.altitude, hz.azimuth, radius);
+  const axis = norm3(cross3(NORTH, planetXYZ));
+
+  const circlePoints = [];
+  for (let i = 0; i <= steps; i++) {
+    circlePoints.push(rotateAroundAxis(planetXYZ, axis, (i / steps) * 2 * Math.PI));
+  }
+
+  // Mundane position = where the circle crosses the equator, i.e. the
+  // equator point where dot(equatorXYZ, axis) changes sign. Sampled search
+  // (same approach as the Placidus cusp search below) rather than closed
+  // form. Two antipodal crossings exist; keep the one nearer the planet's
+  // own azimuth (same side of the meridian) rather than its antipode.
+  const SAMPLES = 1440;
+  const crossings = [];
+  let prevRa = 0, prevDot = null;
+  for (let i = 0; i <= SAMPLES; i++) {
+    const raH = (i / SAMPLES) * 24;
+    const eqHz = horizonOf(date, observer, raH, 0);
+    const d = dot3(altAzToXYZ(eqHz.altitude, eqHz.azimuth, radius), axis);
+    if (i > 0 && Math.sign(d) !== Math.sign(prevDot)) crossings.push((prevRa + raH) / 2);
+    prevRa = raH; prevDot = d;
+  }
+  const angDist = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+  let mundaneRaHours = crossings[0] ?? ra;
+  if (crossings.length === 2) {
+    const c0 = horizonOf(date, observer, crossings[0], 0);
+    const c1 = horizonOf(date, observer, crossings[1], 0);
+    mundaneRaHours = angDist(c0.azimuth, hz.azimuth) <= angDist(c1.azimuth, hz.azimuth) ? crossings[0] : crossings[1];
+  }
+  const mundaneHz = horizonOf(date, observer, mundaneRaHours, 0);
+
+  return {
+    planetXYZ,
+    circlePoints,
+    mundaneXYZ: altAzToXYZ(mundaneHz.altitude, mundaneHz.azimuth, radius),
+    obliqueAscensionHours: mundaneRaHours,
+  };
+}
+
+// Runs computeCircleOfPositionHorizon for each of the natal planets — the
+// per-planet extension of computeRegiomontanusConstruction used by the
+// "how houses are built" animation's final phase (buildRegiomontanusConstruction/
+// main.js).
+export function computePlanetPositionsConstruction(date, observer, planets, radius = 1) {
+  return planets.map((p) => ({
+    key: p.key,
+    ...computeCircleOfPositionHorizon(date, observer, p.ra, p.dec, radius),
+  }));
+}
+
 // ── Placidus construction (pedagogical) ───────────────────────────────────
 // Placidus is a TEMPORAL construction, unlike Regiomontanus's spatial one
 // above: a cusp is the ecliptic point that has completed a given FRACTION
