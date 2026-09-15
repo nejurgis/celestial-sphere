@@ -8,7 +8,7 @@ import {
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
   formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
   computeEquatorialGrid, computeAzimuthalGrid, computeAscPerpendicular, computeWholeSignHouses,
-  computeRegiomontanusConstruction, computePlacidusConstruction, computePlanetPositionsConstruction,
+  computeRegiomontanusConstruction, computePlacidusConstruction,
 } from './astro.js';
 import { skybrightnessPrepare, skybrightnessGetLuminance } from './skybrightness.js';
 import {
@@ -16,7 +16,7 @@ import {
   buildAspectPlane, buildLiveAscMarker, buildAscPerpendicularLine, updateAscPerpendicularLine, buildStarField, elementColorForDeg,
   setEquatorialSphereOrientation, DIRECTION_COLORS, SPHERE_RADIUS, starGlowTexture, sunHaloTexture,
   buildEquatorialGrid, buildAzimuthalGrid,
-  buildRegiomontanusConstruction, revealHouseCirclePartial, revealPlanetCirclePartial, disposeRegiomontanusConstruction, updateRegiomontanusConstruction,
+  buildRegiomontanusConstruction, revealHouseCirclePartial, disposeRegiomontanusConstruction, updateRegiomontanusConstruction,
   buildPlacidusConstruction, revealPlacidusCurvePartial, disposePlacidusConstruction, updatePlacidusConstruction,
 } from './scene.js';
 import { renderChart2D } from './chart2d.js';
@@ -1170,7 +1170,6 @@ function animate() {
     if (regioConstruction) {
       regioConstruction.lineMaterial.uniforms.uResolution.value.set(...res);
       regioConstruction.tickMaterial.uniforms.uResolution.value.set(...res);
-      if (regioConstruction.planetLineMaterial) regioConstruction.planetLineMaterial.uniforms.uResolution.value.set(...res);
     }
     if (placidusConstruction) {
       placidusConstruction.lineMaterial.uniforms.uResolution.value.set(...res);
@@ -1557,18 +1556,14 @@ tourEndBtn.addEventListener('click', endGuidedTour);
 // the guided tour above).
 const REGIO_CIRCLE_SECONDS = 1.8; // how long one house's great circle takes to "grow" in
 const REGIO_HOLD_SECONDS = 1.3;   // pause on the landed cusp before moving to the next house
-const REGIO_PLANET_CIRCLE_SECONDS = 1.2; // shorter than a house's — same idea, 7 of these back-to-back would otherwise drag
-const REGIO_PLANET_HOLD_SECONDS = 0.9;
 const regioConstructBtn = document.getElementById('regio-construct-btn');
 const regioPanel = document.getElementById('regio-panel');
 const regioNarrationEl = document.getElementById('regio-narration');
 const regioStopBtn = document.getElementById('regio-stop-btn');
-let regioConstruction = null; // { group, northMarker, houses: [...], planetEntries: [...] } from buildRegiomontanusConstruction
+let regioConstruction = null; // { group, northMarker, houses: [...] } from buildRegiomontanusConstruction
 let regioAnimActive = false;
-let regioAnimStage = 'houses'; // 'houses' (12 cusps) → 'planets' (each planet's own circle of position)
 let regioAnimHouseIdx = 0;
-let regioAnimPlanetIdx = 0;
-let regioAnimPhase = 'circle'; // 'circle' (growing) | 'hold' (paused on the landed cusp/mundane position)
+let regioAnimPhase = 'circle'; // 'circle' (growing) | 'hold' (paused on the landed cusp)
 let regioAnimElapsed = 0;
 
 function regioIntroText() {
@@ -1576,12 +1571,6 @@ function regioIntroText() {
 }
 function regioHouseText(h) {
   return `House ${h.house}: division point at RAMC+${h.offsetDeg}° on the equator → great circle through the horizon's N/S → crosses the ecliptic at ${formatEclipticDegree(h.cuspDeg)}.`;
-}
-function regioPlanetIntroText() {
-  return "The same construction applies to any planet, not just an equatorial division point: draw its own great circle through the horizon's North and South points — its circle of position. Where that circle crosses the equator is the planet's mundane position; that point's own right ascension is its oblique ascension on this horizon.";
-}
-function regioPlanetText(e) {
-  return `${e.key}: circle of position drawn through it and the horizon's N/S → crosses the equator at its mundane position → oblique ascension ${e.obliqueAscensionHours.toFixed(2)}h.`;
 }
 
 function startRegioConstruction() {
@@ -1591,13 +1580,10 @@ function startRegioConstruction() {
   const construction = computeRegiomontanusConstruction(
     natalDate, natalObserver, { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc }, SPHERE_RADIUS,
   );
-  const planetPositions = computePlanetPositionsConstruction(natalDate, natalObserver, lastState.planets, SPHERE_RADIUS);
-  regioConstruction = buildRegiomontanusConstruction(construction, planetPositions);
+  regioConstruction = buildRegiomontanusConstruction(construction);
   scene.add(regioConstruction.group);
   regioAnimActive = true;
-  regioAnimStage = 'houses';
   regioAnimHouseIdx = 0;
-  regioAnimPlanetIdx = 0;
   regioAnimPhase = 'circle';
   regioAnimElapsed = 0;
   regioConstruction.houses[0].divisionMarker.visible = true;
@@ -1613,7 +1599,6 @@ function stopRegioConstruction() {
   }
   regioConstruction = null;
   regioAnimActive = false;
-  regioAnimStage = 'houses';
   regioPanel.hidden = true;
   regioConstructBtn.textContent = '📐 How houses are built (Regiomontanus)';
 }
@@ -1627,65 +1612,31 @@ function stopRegioConstruction() {
 // button, same as the guided tour ends on its own final frame.
 function advanceRegioConstruction(dt) {
   if (!regioAnimActive || !regioConstruction) return;
+  const h = regioConstruction.houses[regioAnimHouseIdx];
   regioAnimElapsed += dt;
-
-  if (regioAnimStage === 'houses') {
-    const h = regioConstruction.houses[regioAnimHouseIdx];
-    if (regioAnimPhase === 'circle') {
-      const frac = Math.min(1, regioAnimElapsed / REGIO_CIRCLE_SECONDS);
-      const count = Math.max(2, Math.round(frac * h.circlePoints.length));
-      revealHouseCirclePartial(h, count);
-      if (frac >= 1) {
-        h.cuspMarker.visible = true;
-        h.cuspLabel.visible = true;
-        h.cuspTick.visible = true;
-        regioNarrationEl.textContent = regioHouseText(h);
-        regioAnimPhase = 'hold';
-        regioAnimElapsed = 0;
-      }
-    } else if (regioAnimPhase === 'hold' && regioAnimElapsed >= REGIO_HOLD_SECONDS) {
+  if (regioAnimPhase === 'circle') {
+    const frac = Math.min(1, regioAnimElapsed / REGIO_CIRCLE_SECONDS);
+    const count = Math.max(2, Math.round(frac * h.circlePoints.length));
+    revealHouseCirclePartial(h, count);
+    if (frac >= 1) {
+      h.cuspMarker.visible = true;
+      h.cuspLabel.visible = true;
+      h.cuspTick.visible = true;
+      regioNarrationEl.textContent = regioHouseText(h);
+      regioAnimPhase = 'hold';
+      regioAnimElapsed = 0;
+    }
+  } else if (regioAnimPhase === 'hold') {
+    if (regioAnimElapsed >= REGIO_HOLD_SECONDS) {
       regioAnimHouseIdx += 1;
       regioAnimElapsed = 0;
       if (regioAnimHouseIdx >= regioConstruction.houses.length) {
-        const hasPlanets = regioConstruction.planetEntries && regioConstruction.planetEntries.length > 0;
-        if (hasPlanets) {
-          regioAnimStage = 'planets';
-          regioAnimPlanetIdx = 0;
-          regioAnimPhase = 'circle';
-          regioNarrationEl.textContent = regioPlanetIntroText();
-        } else {
-          regioAnimActive = false;
-          regioNarrationEl.textContent = 'All 12 house cusps built — each one is just where its own great circle crosses the ecliptic.';
-        }
+        regioAnimActive = false;
+        regioNarrationEl.textContent = 'All 12 house cusps built — each one is just where its own great circle crosses the ecliptic.';
       } else {
         regioAnimPhase = 'circle';
         regioConstruction.houses[regioAnimHouseIdx].divisionMarker.visible = true;
       }
-    }
-    return;
-  }
-
-  // regioAnimStage === 'planets'
-  const e = regioConstruction.planetEntries[regioAnimPlanetIdx];
-  if (regioAnimPhase === 'circle') {
-    const frac = Math.min(1, regioAnimElapsed / REGIO_PLANET_CIRCLE_SECONDS);
-    const count = Math.max(2, Math.round(frac * e.circlePoints.length));
-    revealPlanetCirclePartial(e, count);
-    if (frac >= 1) {
-      e.mundaneMarker.visible = true;
-      e.mundaneLabel.visible = true;
-      regioNarrationEl.textContent = regioPlanetText(e);
-      regioAnimPhase = 'hold';
-      regioAnimElapsed = 0;
-    }
-  } else if (regioAnimPhase === 'hold' && regioAnimElapsed >= REGIO_PLANET_HOLD_SECONDS) {
-    regioAnimPlanetIdx += 1;
-    regioAnimElapsed = 0;
-    if (regioAnimPlanetIdx >= regioConstruction.planetEntries.length) {
-      regioAnimActive = false;
-      regioNarrationEl.textContent = 'Every planet’s mundane position and oblique ascension is just where its own circle of position crosses the equator — the same construction as a house cusp, applied to a body instead of a division point.';
-    } else {
-      regioAnimPhase = 'circle';
     }
   }
 }
@@ -1822,11 +1773,7 @@ function refreshActiveConstructionAtRotation(fakeDate, liveState) {
   const angles = { mc: liveState.mc, ic: liveState.ic, asc: liveState.asc, dsc: liveState.dsc };
 
   if (regioConstruction && !regioAnimActive) {
-    const freshConstruction = computeRegiomontanusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS);
-    const freshPlanetPositions = regioConstruction.planetEntries
-      ? computePlanetPositionsConstruction(fakeDate, natalObserver, liveState.planets, SPHERE_RADIUS)
-      : null;
-    updateRegiomontanusConstruction(regioConstruction, freshConstruction, freshPlanetPositions);
+    updateRegiomontanusConstruction(regioConstruction, computeRegiomontanusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS));
   } else if (placidusConstruction && !placidusAnimActive) {
     const construction = computePlacidusConstruction(fakeDate, natalObserver, angles, SPHERE_RADIUS);
     const updatedInPlace = updatePlacidusConstruction(placidusConstruction, construction);

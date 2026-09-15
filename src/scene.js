@@ -789,7 +789,6 @@ export const DIRECTION_COLORS = { active: DIRECTION_COLOR, hit: DIRECTION_HIT_CO
 // animate()) reveal them one house at a time.
 const REGIO_COLOR = 0xd946ef;    // magenta — Regiomontanus's great circles
 const PLACIDUS_COLOR = 0x06b6d4; // cyan — Placidus's curved loci; deliberately far from magenta so running one after the other reads as a clear contrast
-const PLANET_POS_COLOR = 0xf59e0b; // amber — a planet's own circle of position (same construction as a house arc, through the planet instead of a division point)
 
 // Screen-space lines (sky-shaders.js — the SAME system the equatorial/
 // azimuthal grids already use), not THREE.TubeGeometry. A tube's per-call
@@ -849,7 +848,7 @@ export function disposeConstructionGroup(construction) {
 // equatorial division points, each one's full house-circle great circle
 // (through the horizon's North/South points — not the celestial pole),
 // and where that circle meets the ecliptic.
-export function buildRegiomontanusConstruction(construction, planetPositions = null) {
+export function buildRegiomontanusConstruction(construction) {
   const group = new THREE.Group();
   // ONE shared material for all 12 circles (and another for the 12 thinner
   // ticks) rather than one each — cheaper, and both need their own
@@ -898,46 +897,11 @@ export function buildRegiomontanusConstruction(construction, planetPositions = n
     return { ...h, divisionMarker, circleMesh, cuspMarker, cuspLabel, cuspTick };
   });
 
-  // The animation's final phase: the same house-arc construction applied
-  // to each actual planet instead of an equatorial division point — see
-  // computePlanetPositionsConstruction (astro.js). Optional: only present
-  // when the caller (main.js) passes planetPositions.
-  let planetEntries = null;
-  let planetLineMaterial = null;
-  if (planetPositions) {
-    planetLineMaterial = createScreenLineMaterial({ color: PLANET_POS_COLOR, lineWidth: 3, opacity: 0.85 });
-    planetEntries = planetPositions.map((p) => {
-      const circleMesh = emptyScreenLine(planetLineMaterial);
-      circleMesh.visible = false;
-      group.add(circleMesh);
-
-      const mundaneMat = new THREE.MeshBasicMaterial({ color: PLANET_POS_COLOR });
-      applyStereographicWarp(mundaneMat);
-      const mundaneMarker = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), mundaneMat);
-      mundaneMarker.position.set(...p.mundaneXYZ);
-      mundaneMarker.visible = false;
-      group.add(mundaneMarker);
-
-      const mundaneLabel = makeTextSprite(`${p.key}: OA ${p.obliqueAscensionHours.toFixed(2)}h`, {
-        color: '#b45309', size: 22, weight: '700', scale: 0.17,
-      });
-      mundaneLabel.position.copy(mundaneMarker.position).multiplyScalar(1.13);
-      mundaneLabel.visible = false;
-      group.add(mundaneLabel);
-
-      return { ...p, circleMesh, mundaneMarker, mundaneLabel };
-    });
-  }
-
-  return { group, northMarker, northLabel, houses, lineMaterial, tickMaterial, planetEntries, planetLineMaterial };
+  return { group, northMarker, northLabel, houses, lineMaterial, tickMaterial };
 }
 
 export function revealHouseCirclePartial(houseEntry, count) {
   growScreenLine(houseEntry.circleMesh, houseEntry.circlePoints, count);
-}
-
-export function revealPlanetCirclePartial(planetEntry, count) {
-  growScreenLine(planetEntry.circleMesh, planetEntry.circlePoints, count);
 }
 
 export const disposeRegiomontanusConstruction = disposeConstructionGroup;
@@ -962,7 +926,7 @@ export const disposeRegiomontanusConstruction = disposeConstructionGroup;
 // (only Placidus can have cusps come and go — see updatePlacidusConstruction),
 // so a straight index-aligned loop is safe here (both arrays are sorted
 // the same way, by offsetDeg).
-export function updateRegiomontanusConstruction(built, construction, planetPositions = null) {
+export function updateRegiomontanusConstruction(built, construction) {
   built.northMarker.position.set(...construction.northXYZ);
   built.northLabel.position.copy(built.northMarker.position).multiplyScalar(1.15);
   for (let i = 0; i < built.houses.length; i++) {
@@ -979,24 +943,6 @@ export function updateRegiomontanusConstruction(built, construction, planetPosit
     h.cuspMarker.position.set(...src.cuspXYZ);
     h.cuspLabel.position.copy(h.cuspMarker.position).multiplyScalar(1.13);
     updateCuspTick(h.cuspTick, src.cuspTickXYZ);
-  }
-  // Planet circles-of-position/mundane positions genuinely move as the
-  // sky rotates too (same reasoning as the house arcs above) — only
-  // refreshed when this construction was built WITH planet data and the
-  // caller passes fresh positions (i.e. the animation's planet phase has
-  // already finished; see refreshActiveConstructionAtRotation in main.js).
-  if (built.planetEntries && planetPositions) {
-    for (let i = 0; i < built.planetEntries.length; i++) {
-      const e = built.planetEntries[i];
-      const src = planetPositions[i];
-      e.planetXYZ = src.planetXYZ;
-      e.circlePoints = src.circlePoints;
-      e.mundaneXYZ = src.mundaneXYZ;
-      e.obliqueAscensionHours = src.obliqueAscensionHours;
-      growScreenLine(e.circleMesh, src.circlePoints, src.circlePoints.length);
-      e.mundaneMarker.position.set(...src.mundaneXYZ);
-      e.mundaneLabel.position.copy(e.mundaneMarker.position).multiplyScalar(1.13);
-    }
   }
 }
 
