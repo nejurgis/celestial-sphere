@@ -368,7 +368,16 @@ function forwardArcDeg(fromDeg, toDeg) {
 // (directing the Ascendant to a promissor's aspect/conjunction is one of the
 // most common primary-direction methods), so angles work in either role.
 function resolveEquatorial(point, date, observer) {
-  return point.body ? equatorialOf(point.body, date, observer) : { ra: point.ra, dec: point.dec };
+  return point.body ? geocentricEquatorialOf(point.body, date) : { ra: point.ra, dec: point.dec };
+}
+
+// Geocentric RA/Dec of-date. Primary directions use these, not the
+// topocentric ones equatorialOf() gives for drawing: the Moon's parallax
+// (up to ~1°) shifted its directions by well over a year.
+function geocentricEquatorialOf(body, date) {
+  const vec = Astronomy.GeoVector(body, date, true);
+  const eq = Astronomy.EquatorFromVector(Astronomy.RotateVector(Astronomy.Rotation_EQJ_EQD(date), vec));
+  return { ra: eq.ra, dec: eq.dec };
 }
 
 // Shared by both arc systems below: once a system has decided WHICH point
@@ -853,27 +862,48 @@ const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const scale3 = (v, s) => [v[0] * s, v[1] * s, v[2] * s];
 const norm3 = v => { const n = Math.hypot(...v) || 1; return [v[0] / n, v[1] / n, v[2] / n]; };
 
-export function computeAspectPlane(body, date, observer, radius = 1, searchWindowDays = 250, steps = 120) {
+// How far either side of "now" to look for the neighbouring latitude nodes.
+// A planet's latitude swing between nodes lasts about half its sidereal
+// period, so a fixed window (250 days was the old one) works for Venus and
+// Mercury but silently truncates Mars, Jupiter and above — Saturn's swing is
+// years long, which put its whole aspect plane in the wrong place.
+const NODE_SEARCH_DAYS = { Mercury: 250, Venus: 400, Mars: 900, Jupiter: 2500, Saturn: 6000 };
+
+export function computeAspectPlane(body, date, observer, radius = 1, searchWindowDays = NODE_SEARCH_DAYS[body] ?? 250, steps = 120) {
   const nowEcl = eclipticOf(body, date);
   const P0 = eclipticToCartesian(nowEcl.elon, nowEcl.elat);
   const sampleElat = d => eclipticOf(body, new Date(date.getTime() + d * 86400000)).elat;
 
-  // Nearest node (elat=0 crossing) on each side of "now".
+  // Coarse scan (a long window at 1-day resolution would be thousands of
+  // ephemeris calls per planet), then refine day-by-day inside the one
+  // coarse step that contains the node / the maximum.
+  const stride = Math.max(1, Math.round(searchWindowDays / 300));
   const nowSign = Math.sign(nowEcl.elat) || 1;
-  let prevNodeDay = -searchWindowDays;
-  for (let d = -1; d >= -searchWindowDays; d--) {
-    if (Math.sign(sampleElat(d)) !== nowSign) { prevNodeDay = d; break; }
-  }
-  let nextNodeDay = searchWindowDays;
-  for (let d = 1; d <= searchWindowDays; d++) {
-    if (Math.sign(sampleElat(d)) !== nowSign) { nextNodeDay = d; break; }
-  }
+  const findNode = dir => {
+    for (let d = dir * stride; Math.abs(d) <= searchWindowDays; d += dir * stride) {
+      if (Math.sign(sampleElat(d)) !== nowSign) {
+        for (let f = d - dir * (stride - 1); f !== d + dir; f += dir) {
+          if (Math.sign(sampleElat(f)) !== nowSign) return f;
+        }
+        return d;
+      }
+    }
+    return dir * searchWindowDays;
+  };
+  const prevNodeDay = findNode(-1);
+  const nextNodeDay = findNode(1);
 
   // Max |latitude| within this single swing only — and WHERE it happens.
   let maxAbsLat = Math.abs(nowEcl.elat), maxDay = 0;
-  for (let d = prevNodeDay; d <= nextNodeDay; d++) {
+  for (let d = prevNodeDay; d <= nextNodeDay; d += stride) {
     const e = Math.abs(sampleElat(d));
     if (e > maxAbsLat) { maxAbsLat = e; maxDay = d; }
+  }
+  if (stride > 1 && maxDay !== 0) {
+    for (let d = maxDay - stride; d <= maxDay + stride; d++) {
+      const e = Math.abs(sampleElat(d));
+      if (e > maxAbsLat) { maxAbsLat = e; maxDay = d; }
+    }
   }
   const inclinationDeg = maxAbsLat;
   const iRad = (inclinationDeg * Math.PI) / 180;
