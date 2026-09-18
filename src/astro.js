@@ -1016,38 +1016,28 @@ export function computeAspectPoint(aspectPlane, offsetDeg) {
 // circles are needed for the remaining 8 cusps.
 export function computeRegiomontanusHouses(date, observer, angles, radius = 1) {
   const { mc, ic, asc, dsc } = angles;
-  const ramcHours = mc.ra;
+  const rad = Math.PI / 180;
+  const ramcDeg = mc.ra * 15;
 
-  const STEPS = 720; // 0.5° ecliptic sampling — plenty for a cusp line's width
-  const fine = [];
-  for (let i = 0; i <= STEPS; i++) {
-    const t = (i / STEPS) * 360;
-    const eq = eclipticPointToEquatorial(t, 0, date);
-    const { azimuth, altitude } = horizonOf(date, observer, eq.ra, eq.dec);
-    fine.push({ deg: t, xyz: altAzToXYZ(altitude, azimuth, radius) });
-  }
+  // Closed form, in equatorial-of-date coordinates (no refraction, no
+  // sampling — the earlier sampled/refracted version was up to ~6' off).
+  // A house circle contains the horizon's North point and the equatorial
+  // division point D; its normal is n = North × D. The cusp is where the
+  // ecliptic (unit vector cos(l)·e1 + sin(l)·e2) lies in that plane:
+  //   n·e1 cos(l) + n·e2 sin(l) = 0.
+  const vec = (raDeg, decDeg) => [
+    Math.cos(decDeg * rad) * Math.cos(raDeg * rad),
+    Math.cos(decDeg * rad) * Math.sin(raDeg * rad),
+    Math.sin(decDeg * rad),
+  ];
+  const north = vec(ramcDeg + 180, 90 - observer.latitude); // horizon North point, on the meridian
+  const eq0 = eclipticPointToEquatorial(0, 0, date), eq90 = eclipticPointToEquatorial(90, 0, date);
+  const e1 = vec(eq0.ra * 15, eq0.dec), e2 = vec(eq90.ra * 15, eq90.dec);
 
-  const NORTH = altAzToXYZ(0, 0, radius); // North point of the horizon
-
-  // The house circle for an equatorial division point: the great circle
-  // through NORTH, the (antipodal) south horizon point, and the division
-  // point itself. Where it crosses the sampled ecliptic (sign change of the
-  // signed distance to the circle's plane) is a candidate cusp.
-  function circleCrossings(divisionRaHours) {
-    const ra = ((divisionRaHours % 24) + 24) % 24;
-    const { azimuth, altitude } = horizonOf(date, observer, ra, 0);
-    const D = altAzToXYZ(altitude, azimuth, radius);
-    const Nh = cross3(NORTH, D);
-    const out = [];
-    for (let i = 0; i < fine.length - 1; i++) {
-      const a = fine[i], b = fine[i + 1];
-      const da = dot3(a.xyz, Nh), db = dot3(b.xyz, Nh);
-      if ((da >= 0) !== (db >= 0)) {
-        const frac = da / (da - db);
-        out.push((((a.deg + frac * (b.deg - a.deg)) % 360) + 360) % 360);
-      }
-    }
-    return out;
+  function circleCrossings(offsetDeg) {
+    const n = cross3(north, vec(ramcDeg + offsetDeg, 0));
+    const l = Math.atan2(-dot3(n, e1), dot3(n, e2)) / rad;
+    return [((l % 360) + 360) % 360, (((l + 180) % 360) + 360) % 360];
   }
 
   // Does x lie strictly between lo and hi going forward (increasing) from
@@ -1069,8 +1059,7 @@ export function computeRegiomontanusHouses(date, observer, angles, radius = 1) {
   const PAIRS = [[30, 11, 5], [60, 12, 6], [120, 2, 8], [150, 3, 9]];
 
   for (const [offsetDeg, a, b] of PAIRS) {
-    const crossings = circleCrossings(ramcHours + offsetDeg / 15);
-    for (const x of crossings) {
+    for (const x of circleCrossings(offsetDeg)) {
       const [loA, hiA] = RANGE[a];
       cusps[between(x, loA, hiA) ? a : b] = x;
     }

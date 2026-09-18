@@ -9,17 +9,27 @@ evidence for it, and how far the date moves if you choose otherwise.
 Code lives in `src/astro.js`. Verification: `npm run verify:directions`
 (`scripts/verify-directions.mjs`).
 
-Reference text: *Predictive Astrology Textbook* (the "book" below), ch. 3,
-pp. 377–389 — Example №35, birth 1976-11-29 12:15 UTC+3, 37°37′E 55°45′N.
+Reference material (the "book" and "blog" below):
+
+* *Predictive Astrology Textbook*, ch. 3, pp. 377–389 — Example №35, birth
+  1976-11-29 12:15 UTC+3, 37°37′E 55°45′N (rectified to 12:16).
+* The same author's blog post on Princess Diana
+  (morinus-astrology.com/diana-death): a second chart with dated directions and
+  Regiomontanus cusps. It states that the houses are Regiomontanus and mentions
+  that "if two points have a close declination, then they merge into one point in
+  the direction" (Morin); it gives **no formulas**.
 
 ## 1. Status in one paragraph
 
 Against 13 published forecasts at the book's official time (12:15) and 8 at its
 rectified time (12:16), 11 of 13 land within ±2 months of the published *month*
-(the published resolution) and every row is within 3. Aspects to the Ascendant,
-to the Sun, Venus, Jupiter and the Moon, and Saturn-as-promissor all fit. Two
-Mars→Mars aspects come out 2–3 months early and are unexplained
-([§10](#10-known-discrepancies)). Antiscia are not implemented.
+(the published resolution) and every row is within 3. Against the blog's Diana
+chart, all four Regiomontanus cusps match to 0.2′ and three of four directions
+match to the month. Aspects to the Ascendant, to the Sun, Venus, Jupiter,
+Mercury and the Moon, and Saturn-as-promissor all fit. **Three rows are not
+reproduced** and are listed in [§10](#10-known-discrepancies): two Mars→Mars
+aspects (2–3 months early), Diana's Mercury→Mars (4½ years early), and William's
+Saturn☍→IC (3 years early). Antiscia are not implemented.
 
 ## 2. Conventions and inputs
 
@@ -47,6 +57,14 @@ IC = MC+180°, DSC = ASC+180°
 Geometric (unrefracted) horizon. Each angle is then pushed through the normal
 ecliptic→equator→horizon pipeline to get RA/Dec (angles sit on the ecliptic,
 latitude 0).
+
+**House cusps** (`computeRegiomontanusHouses`) are display-only but are also exact
+now: each house circle contains the horizon's North point and the equatorial
+division point at RAMC+30°·k, and the cusp is where that plane meets the true
+ecliptic (`n·e₁ cos λ + n·e₂ sin λ = 0`). The earlier version placed the division
+point through the *refracted* horizon and interpolated on a 0.5° grid, which put
+intermediate cusps up to ~6′ off (checked against the blog's Diana cusps:
+22°44′, 16°50′, 13°03′, 29°03′ — now matched to 0.2′).
 
 Two earlier defects here mattered for directions: the ecliptic→equator step used
 the J2000 ecliptic (≈0.34° error in 1976, growing with distance from 2000), and
@@ -201,24 +219,48 @@ uncertainty is already 1–2 days).
 
 ## 10. Known discrepancies
 
-Rows where the app differs from the book by more than a month, at 12:15:
+Rows the app does not reproduce (all run by `npm run verify:directions`; rows
+marked *known miss* there do not fail the check).
 
-| Direction | Book | App | Note |
-|---|---|---|---|
-| Mars ⚹(dexter) → Mars | Jan 2007 | Nov 2006 | −2 mo |
-| Mars □(dexter) → Mars | Dec 2014 | Sep 2014 | −3 mo |
-| Saturn △(dexter) → Venus | Mar 2016 | May 2016 | +2 mo |
-| Saturn ⚹ → DSC | Feb 2013 | Apr 2013 | +2 mo |
+| Direction | Source | Expected | App | Note |
+|---|---|---|---|---|
+| Mars ⚹(dexter) → Mars (12:15) | book | Jan 2007 | Nov 2006 | −2 mo |
+| Mars □(dexter) → Mars (12:15) | book | Dec 2014 | Sep 2014 | −3 mo |
+| Saturn △(dexter) → Venus (12:15) | book | Mar 2016 | May 2016 | +2 mo |
+| Saturn ⚹ → DSC (12:15) | book | Feb 2013 | Apr 2013 | +2 mo |
+| **Mercury ☌ Mars** (Diana) | blog | Jan 2017 (55) | 2012-09 | arc 50.5° vs ≈54.7° implied — **4½ yr** |
+| **Saturn ☍ → IC** (William) | blog | Aug 1997 | 1994-07 | arc 11.9° vs 15.0° implied — **3 yr** |
 
-Both Mars rows are converse directions of a Mars aspect to Mars. The alternatives
-tried for the aspect point (zodiacal lat 0, same latitude) are 1–2 years off, so
-the plane construction is the best available and the residual is unexplained —
-candidates: the exact definition of the "previous node"/"maximum elevation" for
-Mars (whose latitude changes sign several times per swing), or a Mars-specific
-detail in the source software.
+**Mars→Mars.** Both are converse directions of a Mars aspect to Mars. The
+alternatives tried for the aspect point (zodiacal lat 0, same latitude) are 1–2
+years off, so the plane construction is the best available. Candidates: the
+exact definition of "previous node"/"maximum elevation" for Mars (its latitude
+changes sign several times per swing), or a Mars-specific detail in the source
+software.
+
+**Diana's Mercury→Mars.** Mercury has a large latitude (−4.7°). Variants tried,
+none of which give 54.7°: Mercury and/or Mars projected to the ecliptic (40.95°,
+42.77°, 48.63°), swapping promissor/significator (same arc), plain RA difference
+(60.7°). The blog's own wording ("Mercury to Mars") does not say which is
+promissor, nor whether it is a conjunction rather than another aspect; the text
+I have is a summary, so an aspect-vs-conjunction mix-up is possible.
+
+**William's Saturn☍→IC.** The exact intersection of the IC's parallel with the
+Saturn-opposition point's circle of position is at 11.86° (verified by root
+finding, independent of the pole formula). The blog's August 1997 corresponds to
+15.0°, which is precisely the *plain RA difference* (Saturn☍ RA 15.28°, IC RA
+30.24°) — i.e. the promissor carried *backward* to the meridian by the shortest
+path, which the book (p.378) calls a mistaken method. The same "plain meridian
+distance" reading is contradicted by Borealis's Saturn⚹→MC row (RA difference
+48.1° vs book 25.7°, our value 25.6°). So either the blog's William figure was
+produced differently (e.g. a different opposition point for a retrograde,
+latitude-carrying Saturn) or Morin/the author treat angles on the *lower*
+meridian differently. Open.
 
 Also unexplained: the user-supplied "Sun ⚹ 7° Libra → Sun: Oct 2008" (app: Feb
-2009). It is not in the book's tables; it may be a transcription slip.
+2009). It is not in the book's tables; it may be a transcription slip. And the
+user-supplied "ASC △ Venus: Apr 2018" is Apr **2019** at 12:16 (the book's
+Table 3.10 implies Apr 2019), so that was a typo.
 
 ## 11. Does this differ from Morinus?
 
@@ -249,8 +291,13 @@ it to `scripts/verify-directions.mjs`.
 
 The exact formulas in §6 were reached empirically (matching published dates),
 not derived from Morin's text, so a different formulation that agrees on these
-13 rows but differs elsewhere (other latitudes, high declinations, arcs near
-180°) is possible.
+rows but differs elsewhere (other latitudes, high declinations, arcs near 180°,
+angles on the lower meridian) is possible. The two open blog cases in §10 both
+involve extreme geometry (Mercury at −4.7° latitude; a promissor 15° from the
+IC) and are the likeliest places to find such a difference. The blog also
+remarks that points of close declination "merge into one point in the
+direction"; that is a description of a coincident promissor/significator in 3-D
+and does not by itself change any arc formula here.
 
 ## 12. Running and extending the verification
 
