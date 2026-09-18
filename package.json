@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:directions": "node scripts/verify-directions.mjs"
   },
   "devDependencies": {
     "vite": "^8.2.2"
