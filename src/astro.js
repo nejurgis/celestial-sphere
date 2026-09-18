@@ -108,6 +108,22 @@ export function eclipticOf(body, date) {
   return { elon: ecl.elon, elat: ecl.elat };
 }
 
+// Apparent motion in ecliptic longitude: 'retrograde' (℞), 'stationary'
+// (crawling — about to turn, or just turned) or 'direct'. speed is deg/day,
+// central difference over ±12h. Sun/Moon never retrograde. Stationary
+// thresholds are per-planet (a fixed deg/day cutoff would flag every slow
+// outer-planet day and no Mercury one).
+const STATIONARY_SPEED = { Mercury: 0.08, Venus: 0.06, Mars: 0.03, Jupiter: 0.012, Saturn: 0.006 };
+export function planetMotion(key, body, date) {
+  if (key === 'Sun' || key === 'Moon') return { speed: null, motion: 'direct' };
+  const half = 12 * 3600000;
+  const a = eclipticOf(body, new Date(date.getTime() - half)).elon;
+  const b = eclipticOf(body, new Date(date.getTime() + half)).elon;
+  const speed = ((b - a + 540) % 360) - 180;
+  const motion = Math.abs(speed) < STATIONARY_SPEED[key] ? 'stationary' : speed < 0 ? 'retrograde' : 'direct';
+  return { speed, motion };
+}
+
 // Moon's horizon position + real apparent magnitude — the moonlight input
 // the Schaefer sky-brightness model needs (skybrightness.js). Real
 // magnitude (not a fixed guess) since it drives the model's actual
@@ -164,10 +180,14 @@ export function computeSkyRotationBasis(date, observer, radius = 1) {
 
 // A point ON the ecliptic (elon, elat=0..) → equatorial RA/Dec of-date, so it
 // can be run through horizonOf() the same way a planet is.
+// Uses the TRUE ecliptic of date (ECT) — the same frame Astronomy.Ecliptic()
+// reports planet longitudes in. (ECL would be the J2000 ecliptic: ~0.34° off
+// in 1976, growing with distance from 2000 — shifted every angle/cusp/aspect
+// point relative to the planets.)
 export function eclipticPointToEquatorial(elonDeg, elatDeg, date) {
   const sphere = new Astronomy.Spherical(elatDeg, elonDeg, 1);
   const eclVec = Astronomy.VectorFromSphere(sphere, date);
-  const rot = Astronomy.Rotation_ECL_EQD(date);
+  const rot = Astronomy.Rotation_ECT_EQD(date);
   const eqVec = Astronomy.RotateVector(rot, eclVec);
   return Astronomy.EquatorFromVector(eqVec); // { ra (hours), dec, dist, vec }
 }
@@ -177,7 +197,7 @@ export function eclipticPointToEquatorial(elonDeg, elatDeg, date) {
 // motion) point's zodiac position, since primary motion advances RA — an
 // equatorial quantity — not ecliptic longitude directly.
 //
-// `rotation`, if given, is a precomputed Astronomy.Rotation_EQD_ECL(date) —
+// `rotation`, if given, is a precomputed Astronomy.Rotation_EQD_ECT(date) —
 // pass it when calling this many times for the SAME date (e.g. sampling a
 // direction's whole arc, or a whole directions table): the rotation itself
 // involves nutation/precession and is by far the expensive part, and it
@@ -186,7 +206,7 @@ export function eclipticPointToEquatorial(elonDeg, elatDeg, date) {
 export function equatorialOfDateToEcliptic(raHours, decDeg, date, rotation) {
   const sphere = new Astronomy.Spherical(decDeg, raHours * 15, 1);
   const eqVec = Astronomy.VectorFromSphere(sphere, date);
-  const rot = rotation ?? Astronomy.Rotation_EQD_ECL(date);
+  const rot = rotation ?? Astronomy.Rotation_EQD_ECT(date);
   const eclVec = Astronomy.RotateVector(rot, eqVec);
   const sph = Astronomy.SphereFromVector(eclVec);
   return { elon: ((sph.lon % 360) + 360) % 360, elat: sph.lat };
@@ -241,54 +261,32 @@ export function computeSkyState(date, latitude, longitude, radius = 1) {
   // ecliptic) and Ascendant/Descendant (horizon crossings) — located
   // numerically from the sampled ecliptic circle rather than closed-form
   // trig, since we already have the full sampled circle to hand.
-  const angDist = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
 
-  // MC/IC: the two points nearest az=0 and az=180 (the meridian, at any
-  // altitude) — a great circle crosses another great circle at exactly two
-  // antipodal points, so "nearest az=0" and "nearest az=180" are exactly
-  // those two crossings. Whichever is higher is MC (upper culmination).
-  const byAz0 = [...eclipticPoints].sort((a, b) => angDist(a.azimuth, 0) - angDist(b.azimuth, 0))[0];
-  const byAz180 = [...eclipticPoints].sort((a, b) => angDist(a.azimuth, 180) - angDist(b.azimuth, 180))[0];
-  const mc = byAz0.altitude > byAz180.altitude ? byAz0 : byAz180;
-  const ic = mc === byAz0 ? byAz180 : byAz0;
-
-  // ASC/DSC: interpolate the ecliptic-longitude where altitude crosses zero
-  // between consecutive samples, then recompute that exact point through
-  // the real pipeline (not interpolated xyz/azimuth — only elon is
-  // estimated by interpolation, everything else is exact for that elon).
-  const crossingElons = [];
-  for (let i = 0; i < eclipticPoints.length - 1; i++) {
-    const a = eclipticPoints[i], b = eclipticPoints[i + 1];
-    if ((a.altitude >= 0) !== (b.altitude >= 0)) {
-      const frac = a.altitude / (a.altitude - b.altitude);
-      crossingElons.push(a.deg + frac * (b.deg - a.deg));
-    }
-  }
-  const horizonCrossings = crossingElons.map(elon => {
+  // Angles are computed in closed form (exact), not read off the 2.5°
+  // ecliptic sample grid or the refracted horizon: the MC/IC snapped to the
+  // nearest sample (up to ±1.25° off) and the ASC was found where the
+  // REFRACTED altitude crosses 0 (~1° off at this latitude). Astrology's
+  // angles are geometric: RAMC = local apparent sidereal time, true
+  // obliquity of date, matching the frame planets' longitudes use.
+  const rad = Math.PI / 180;
+  const ramc = (((Astronomy.SiderealTime(date) * 15 + longitude) % 360) + 360) % 360;
+  const eps = Astronomy.e_tilt(new Astronomy.AstroTime(date)).tobl * rad;
+  const R = ramc * rad;
+  const norm360 = d => ((d % 360) + 360) % 360;
+  const mcElon = norm360(Math.atan2(Math.sin(R), Math.cos(R) * Math.cos(eps)) / rad);
+  // Two solutions differ by 180°; the rising (eastern) one has azimuth in (0,180).
+  let ascElon = norm360(Math.atan2(Math.cos(R), -(Math.sin(R) * Math.cos(eps) + Math.tan(latitude * rad) * Math.sin(eps))) / rad);
+  const angleAt = elon => {
     const eclEq = eclipticPointToEquatorial(elon, 0, date);
     const { azimuth, altitude } = horizonOf(date, observer, eclEq.ra, eclEq.dec);
-    return {
-      deg: ((elon % 360) + 360) % 360, azimuth, altitude, ra: eclEq.ra, dec: eclEq.dec,
-      xyz: altAzToXYZ(altitude, azimuth, radius),
-    };
-  });
-  const asc = horizonCrossings.find(c => c.azimuth > 0 && c.azimuth < 180) ?? null; // rising, east
-  // DSC is analytically the exact antipode of ASC on the ecliptic — two
-  // great circles (ecliptic, horizon) always cross at exactly antipodal
-  // points — so it's recomputed through the real pipeline for elon =
-  // asc.deg+180 rather than reused from horizonCrossings' OTHER entry,
-  // which comes from a separate, independent linear interpolation with its
-  // own small error. Reusing it made ASC/DSC land a fraction of a degree
-  // short of exactly opposite, which showed up as a visibly non-horizontal
-  // ASC-DSC line in the 2D chart (a straight line through two points that
-  // are almost-but-not-quite 180° apart isn't horizontal).
-  let dsc = null;
-  if (asc) {
-    const dscElon = (asc.deg + 180) % 360;
-    const eclEq = eclipticPointToEquatorial(dscElon, 0, date);
-    const { azimuth, altitude } = horizonOf(date, observer, eclEq.ra, eclEq.dec);
-    dsc = { deg: dscElon, azimuth, altitude, ra: eclEq.ra, dec: eclEq.dec, xyz: altAzToXYZ(altitude, azimuth, radius) };
-  }
+    return { deg: norm360(elon), azimuth, altitude, ra: eclEq.ra, dec: eclEq.dec, xyz: altAzToXYZ(altitude, azimuth, radius) };
+  };
+  const ascEq = eclipticPointToEquatorial(ascElon, 0, date);
+  if (!(horizonOfAirless(date, observer, ascEq.ra, ascEq.dec).azimuth < 180)) ascElon = norm360(ascElon + 180);
+  const mc = angleAt(mcElon);
+  const ic = angleAt(mcElon + 180);
+  const asc = angleAt(ascElon);
+  const dsc = angleAt(ascElon + 180);
 
   return { observer, planets, equatorPoints, eclipticPoints, poleXYZ, mc, ic, asc, dsc };
 }
@@ -337,11 +335,12 @@ export function computePositionCircle(raHours, date, observer, radius = 1, steps
 // The promissor's directed position advances in RA at the rate of diurnal
 // (primary) motion; the significator's position circle — fixed RA — stays
 // put. Naibod's key converts degrees of that advance into years of life:
-// 360°/365.2422 days ≈ 0.9856°/year, the Sun's mean daily motion — the same
-// key the video names. If the forward arc exceeds 180°, promissor and
-// significator swap roles (a "converse" direction) rather than predicting
-// a 180+ year wait, per the video's own rule.
-export const NAIBOD_DEG_PER_YEAR = 360 / 365.2422;
+// the Sun's mean daily motion, 0°59'08" = 0.98556°/year (1° of arc ≈ 1.0147
+// years) — the value the Predictive Astrology Textbook gives, used as-is
+// rather than re-derived from 360/365.2422 (0.98565°). If the forward arc
+// exceeds 180°, promissor and significator swap roles (a "converse"
+// direction) rather than predicting a 180+ year wait.
+export const NAIBOD_DEG_PER_YEAR = 59 / 60 + 8 / 3600;
 
 // A sidereal day (rotation relative to the stars, not the sun) is ~23h56m4s —
 // slightly shorter than a calendar day, since the calendar day also has to
@@ -382,9 +381,13 @@ function buildDirectionResult(moving, fixed, movingEq, arcDeg, swapped, natalDat
   const movingDec = movingEq.dec;
   const arcYears = arcDeg / NAIBOD_DEG_PER_YEAR;
 
+  // opts.raSign: +1 advances RA (legacy RA/Placidus systems), -1 decreases it
+  // — real primary (diurnal) motion carries points westward, i.e. hour angle
+  // up / RA down relative to the natal houses (Regiomontanus system below).
+  const raSign = opts.raSign ?? 1;
   function directedRAHours(tYears) {
     const t = Math.max(0, Math.min(tYears, arcYears));
-    return (((movingRA0 + t * NAIBOD_DEG_PER_YEAR) % 360) + 360) % 360 / 15;
+    return (((movingRA0 + raSign * t * NAIBOD_DEG_PER_YEAR) % 360) + 360) % 360 / 15;
   }
 
   function directedXYZ(tYears) {
@@ -400,7 +403,7 @@ function buildDirectionResult(moving, fixed, movingEq, arcDeg, swapped, natalDat
   // direction), so it's computed once here rather than per sample — matters
   // when a caller (e.g. the directions table) samples this hundreds of
   // times per direction across hundreds of directions.
-  const eqdEclRotation = Astronomy.Rotation_EQD_ECL(natalDate);
+  const eqdEclRotation = Astronomy.Rotation_EQD_ECT(natalDate);
   function directedElon(tYears) {
     return equatorialOfDateToEcliptic(directedRAHours(tYears), movingDec, natalDate, eqdEclRotation).elon;
   }
@@ -447,6 +450,72 @@ export function computeDirection(promissor, significator, natalDate, observer, r
   const arcDeg = isSelfReturn ? 360 : (swapped ? forwardArcDeg(sRAdeg, pRAdeg) : forward);
 
   return buildDirectionResult(moving, fixed, movingEq, arcDeg, swapped, natalDate, observer, radius, opts);
+}
+
+// ── Primary directions (Regiomontanus, in mundo) ──────────────────────────
+// Classical formulation, verified against a published chart: each point sits
+// on its own "circle of position" through the N/S points of the horizon; that
+// circle's pole height is  tan(pole) = tan(lat)·|sin(A)|,  A being the hour
+// angle where the circle crosses the equator. Both points are then placed by
+// oblique ascension (RA -/+ ascensional difference under that pole, on the
+// point's own east/west side) and the arc is the difference.
+//   direct   (promissor carried west onto the significator): significator's pole
+//   converse (significator carried west onto the promissor): promissor's pole
+// For an ASC/DSC significator the pole is the latitude itself, so a direct
+// arc to the ASC is plain oblique-ascension difference.
+// Primary motion is westward, so the moving point's RA DECREASES (raSign -1).
+function regiomontanusPoleDeg(hourAngleDeg, decDeg, latDeg) {
+  const r = Math.PI / 180, phi = latDeg * r, H = hourAngleDeg * r, d = decDeg * r;
+  // Point in horizon-frame (East, North, Up); circle normal = North-axis × P.
+  const P = [-Math.cos(d) * Math.sin(H),
+    Math.sin(d) * Math.cos(phi) - Math.cos(d) * Math.sin(phi) * Math.cos(H),
+    Math.sin(d) * Math.sin(phi) + Math.cos(d) * Math.cos(phi) * Math.cos(H)];
+  const n = [P[2], 0, -P[0]], e = [0, Math.cos(phi), Math.sin(phi)];
+  let X = [n[1] * e[2] - n[2] * e[1], n[2] * e[0] - n[0] * e[2], n[0] * e[1] - n[1] * e[0]];
+  const m = Math.hypot(...X);
+  if (m < 1e-12) return latDeg; // point on the pole axis — degenerate, fall back to horizon
+  X = X.map(v => v / m);
+  if (X[0] * P[0] + X[1] * P[1] + X[2] * P[2] < 0) X = X.map(v => -v);
+  const A = Math.atan2(-X[0], X[2] / Math.cos(phi));
+  return (Math.atan(Math.tan(phi) * Math.abs(Math.sin(A))) * 180) / Math.PI;
+}
+
+function regiomontanusArcs(pEq, sEq, ramcDeg, latDeg) {
+  const r = Math.PI / 180;
+  const hourAngle = eq => { const h = (((ramcDeg - eq.ra * 15) % 360) + 360) % 360; return h > 180 ? h - 360 : h; };
+  const arcVia = (poleEq, fromEq, toEq) => {
+    const pole = regiomontanusPoleDeg(hourAngle(poleEq), poleEq.dec, latDeg);
+    const east = hourAngle(poleEq) < 0;
+    const oa = eq => {
+      const ad = (Math.asin(Math.max(-1, Math.min(1, Math.tan(eq.dec * r) * Math.tan(pole * r)))) * 180) / Math.PI;
+      return eq.ra * 15 + (east ? -ad : ad);
+    };
+    return (((oa(fromEq) - oa(toEq)) % 360) + 360) % 360;
+  };
+  return {
+    direct: arcVia(sEq, pEq, sEq), // promissor -> significator, significator's pole
+    converse: arcVia(pEq, sEq, pEq), // significator -> promissor, promissor's pole
+  };
+}
+
+// angles: { mc } — only mc.ra (= RAMC) is needed.
+export function computeRegiomontanusDirection(promissor, significator, natalDate, observer, angles, radius = 1, opts = {}) {
+  const pEq = resolveEquatorial(promissor, natalDate, observer);
+  const sEq = resolveEquatorial(significator, natalDate, observer);
+  const dirOpts = { ...opts, raSign: -1 };
+
+  const isSelfReturn = opts.selfReturn && promissor.key === significator.key;
+  if (isSelfReturn) return buildDirectionResult(promissor, significator, pEq, 360, false, natalDate, observer, radius, dirOpts);
+
+  const { direct, converse } = regiomontanusArcs(pEq, sEq, angles.mc.ra * 15, observer.latitude);
+  // Book's rule (Morinus): when the promissor's path to the significator's
+  // circle of position exceeds 180°, hold the promissor still and carry the
+  // significator to it instead — a converse direction.
+  const swapped = direct > 180;
+  const moving = swapped ? significator : promissor;
+  const fixed = swapped ? promissor : significator;
+  const movingEq = swapped ? sEq : pEq;
+  return buildDirectionResult(moving, fixed, movingEq, swapped ? converse : direct, swapped, natalDate, observer, radius, dirOpts);
 }
 
 // ── Primary directions (Placidus semi-arc, "in mundo" via the diurnal/
@@ -768,6 +837,7 @@ export function computeZodiacBand(date, observer, radius = 1, halfWidthDeg = 4, 
 // Those two conditions generically admit exactly two solutions for N
 // (mirror images), disambiguated as described above.
 
+const Z_AXIS = [0, 0, 1];
 const eclipticToCartesian = (elonDeg, elatDeg) => {
   const lon = (elonDeg * Math.PI) / 180, lat = (elatDeg * Math.PI) / 180;
   return [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
@@ -799,40 +869,60 @@ export function computeAspectPlane(body, date, observer, radius = 1, searchWindo
     if (Math.sign(sampleElat(d)) !== nowSign) { nextNodeDay = d; break; }
   }
 
-  // Max |latitude| within this single swing only.
-  let maxAbsLat = Math.abs(nowEcl.elat);
+  // Max |latitude| within this single swing only — and WHERE it happens.
+  let maxAbsLat = Math.abs(nowEcl.elat), maxDay = 0;
   for (let d = prevNodeDay; d <= nextNodeDay; d++) {
     const e = Math.abs(sampleElat(d));
-    if (e > maxAbsLat) maxAbsLat = e;
+    if (e > maxAbsLat) { maxAbsLat = e; maxDay = d; }
   }
   const inclinationDeg = maxAbsLat;
   const iRad = (inclinationDeg * Math.PI) / 180;
 
-  // Solve for the plane's normal N: angle(N,Z)=i, N ⊥ P0.
-  const Z = [0, 0, 1];
-  const Zperp = sub3(Z, scale3(P0, dot3(Z, P0)));
-  const sinGamma = Math.hypot(...Zperp) || 1e-9; // |component of Z perpendicular to P0|
-  const e1 = norm3(Zperp);
-  const e2 = norm3(cross3(P0, e1));
-  const cosTheta = Math.max(-1, Math.min(1, Math.cos(iRad) / sinGamma));
-  const theta0 = Math.acos(cosTheta);
-
-  const buildN = theta => norm3([
-    Math.cos(theta) * e1[0] + Math.sin(theta) * e2[0],
-    Math.cos(theta) * e1[1] + Math.sin(theta) * e2[1],
-    Math.cos(theta) * e1[2] + Math.sin(theta) * e2[2],
-  ]);
-  const Na = buildN(theta0);
-  const Nb = buildN(-theta0);
-
-  // Disambiguate: whichever candidate's in-plane tangent direction at P0
-  // best matches the planet's real short-term motion direction.
-  const laterEcl = eclipticOf(body, new Date(date.getTime() + 6 * 3600000));
-  const P1 = eclipticToCartesian(laterEcl.elon, laterEcl.elat);
-  const realDir = norm3(sub3(P1, P0));
-  const tangentAt = N => norm3(cross3(N, P0));
-  const score = N => Math.abs(dot3(tangentAt(N), realDir));
-  const N = score(Na) >= score(Nb) ? Na : Nb;
+  // Morinus's circle of aspects: the great circle through the planet's
+  // CURRENT position and its point of maximum elevation above the ecliptic
+  // on the path from the previous node to the next one. Two points fix the
+  // circle: N = P0 × Pmax. (An inclination-only construction — plane through
+  // P0 tilted by the max latitude — is only equal when P0 and Pmax happen to
+  // line up; it drifted a whole year on one trine.) When the planet IS at
+  // (or negligibly near) its max elevation, or has ~zero latitude like the
+  // Sun, the two points don't define a circle and the inclination-based
+  // solve below is used instead.
+  let N;
+  const maxEcl = eclipticOf(body, new Date(date.getTime() + maxDay * 86400000));
+  const Pmax = eclipticToCartesian(maxEcl.elon, maxEcl.elat);
+  const crossPP = cross3(P0, Pmax);
+  if (maxDay !== 0 && Math.hypot(...crossPP) > 1e-3 && inclinationDeg > 1e-3) {
+    N = norm3(crossPP);
+    // Orient N so that increasing phi (u->v) runs toward INCREASING ecliptic
+    // longitude at P0 — computeAspectPoint's sinister/dexter sign depends on it.
+    const east = norm3(cross3(Z_AXIS, P0));
+    if (dot3(cross3(N, P0), east) < 0) N = N.map(x => -x);
+  } else {
+    // Solve for the plane's normal N: angle(N,Z)=i, N ⊥ P0.
+    const Zperp = sub3(Z_AXIS, scale3(P0, dot3(Z_AXIS, P0)));
+    const sinGamma = Math.hypot(...Zperp) || 1e-9; // |component of Z perpendicular to P0|
+    const e1 = norm3(Zperp);
+    const e2 = norm3(cross3(P0, e1));
+    const cosTheta = Math.max(-1, Math.min(1, Math.cos(iRad) / sinGamma));
+    const theta0 = Math.acos(cosTheta);
+    const buildN = theta => norm3([
+      Math.cos(theta) * e1[0] + Math.sin(theta) * e2[0],
+      Math.cos(theta) * e1[1] + Math.sin(theta) * e2[1],
+      Math.cos(theta) * e1[2] + Math.sin(theta) * e2[2],
+    ]);
+    const Na = buildN(theta0);
+    const Nb = buildN(-theta0);
+    // Disambiguate: whichever candidate's in-plane tangent direction at P0
+    // best matches the planet's real short-term motion direction.
+    const laterEcl = eclipticOf(body, new Date(date.getTime() + 6 * 3600000));
+    const P1 = eclipticToCartesian(laterEcl.elon, laterEcl.elat);
+    const realDir = norm3(sub3(P1, P0));
+    const tangentAt = M => norm3(cross3(M, P0));
+    const score = M => Math.abs(dot3(tangentAt(M), realDir));
+    N = score(Na) >= score(Nb) ? Na : Nb;
+    const east = norm3(cross3(Z_AXIS, P0));
+    if (dot3(cross3(N, P0), east) < 0) N = N.map(x => -x);
+  }
 
   // Sample the circle: any two orthonormal vectors spanning the plane ⊥ N.
   const ref = Math.abs(N[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
@@ -1214,7 +1304,7 @@ export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate,
   const system = opts.system ?? 'regiomontanus'; // or 'placidus'
   const direct = (p, s, o) => system === 'placidus'
     ? computePlacidusDirection(p, s, natalDate, observer, opts.angles, radius, o)
-    : computeDirection(p, s, natalDate, observer, radius, o);
+    : computeRegiomontanusDirection(p, s, natalDate, observer, opts.angles, radius, o);
   const rows = [];
   for (const promissorKey of pointKeys) {
     const body = bodyOf(promissorKey);
@@ -1232,7 +1322,10 @@ export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate,
       }
 
       for (const significatorKey of pointKeys) {
-        if (significatorKey === promissorKey) continue;
+        // A planet's own aspect point directed to its natal self is a real
+        // direction (e.g. Sun's sextile approaching the Sun); only the
+        // plain self-conjunction is meaningless here.
+        if (significatorKey === promissorKey && variant.deg === 0) continue;
         const significatorPoint = resolvePoint(significatorKey);
         const direction = direct(promissorPoint, significatorPoint, { skipSweep: true });
         if (direction.arcYears > maxYears) continue;

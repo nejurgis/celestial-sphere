@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
-  computeSkyState, computePlanetPath, computePositionCircle, computeDirection, computeZodiacBand,
+  computeSkyState, computePlanetPath, computePositionCircle, computeZodiacBand,
   computeAspectPlane, computeAspectPoint, computeAllDirections, computeRegiomontanusHouses,
-  computeBoundCrossings, computePlacidusDirection, boundOf,
+  computeBoundCrossings, computePlacidusDirection, computeRegiomontanusDirection, boundOf, planetMotion,
   computeSkyRotationBasis, computeStarField, ZODIAC_SIGNS,
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
   formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
@@ -1046,9 +1046,9 @@ function rebuild() {
           promissorPoint, resolveDirectionPoint(significatorKey, state),
           date, state.observer, { mc: state.mc }, SPHERE_RADIUS,
         )
-      : computeDirection(
+      : computeRegiomontanusDirection(
           promissorPoint, resolveDirectionPoint(significatorKey, state),
-          date, state.observer, SPHERE_RADIUS, { selfReturn: isSelfReturn },
+          date, state.observer, { mc: state.mc }, SPHERE_RADIUS, { selfReturn: isSelfReturn },
         );
     const { group, markerMesh, markerMaterial, label, traveledLine, remainingLine, boundLabel } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);
     group.visible = layers.direction;
@@ -1092,7 +1092,8 @@ function renderChart2DPanel() {
         : computeRegiomontanusHouses(natalDate, natalObserver, { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc }, SPHERE_RADIUS))
     : null;
   renderChart2D(chart2dSvg, {
-    planets: lastState.planets, asc: lastState.asc, mc: lastState.mc, dsc: lastState.dsc, ic: lastState.ic,
+    planets: lastState.planets.map(p => ({ ...p, motion: planetMotion(p.key, BODY_BY_KEY[p.key], natalDate).motion })),
+    asc: lastState.asc, mc: lastState.mc, dsc: lastState.dsc, ic: lastState.ic,
     houses, showHouses, showBounds, dateLabel: natalDate.toISOString().slice(0, 16).replace('T', ' '),
   });
 }

@@ -24,6 +24,7 @@ const CX = 250, CY = 250;
 const R_OUTER = 232, R_SIGN_IN = 200;
 const R_BOUNDS_OUT = 200, R_BOUNDS_IN = 178, R_BOUNDS_LABEL = 189;
 const R_HOUSE_LABEL = 168, R_HOUSE_LINE_IN = 60, R_PLANET = 148, R_ANGLE_LABEL = 244;
+const STACK_STEP = 34; // radial gap between bunched planets — room for each one's degree label
 
 // phi's SIGN is what fixes the wheel's rotation sense: ascDeg always maps
 // to phi=180° (9 o'clock — "ASC anchors the wheel at 9 o'clock" below), and
@@ -153,10 +154,19 @@ export function renderChart2D(svg, { planets, asc, mc, dsc, ic, houses, showHous
   withRel.forEach(p => {
     stack = lastRel != null && p.rel - lastRel < 6 ? stack + 1 : 0;
     lastRel = p.rel;
-    const r = R_PLANET - stack * 18;
+    const r = R_PLANET - stack * STACK_STEP;
     const [x, y] = toXY(p.elon, ascDeg, r);
     parts.push(`<circle cx="${x}" cy="${y}" r="10" fill="#fff" stroke="#666" stroke-width="1"/>`);
     parts.push(`<text x="${x}" y="${y}" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">${PLANET_GLYPHS[p.key] ?? p.key[0]}</text>`);
+    // Degree within sign + motion flag (℞ retrograde, S stationary), just
+    // outside the glyph.
+    const inSign = ((p.elon % 360) + 360) % 30;
+    let deg = Math.floor(inSign), min = Math.round((inSign - deg) * 60);
+    if (min === 60) { deg += 1; min = 0; }
+    const flag = p.motion === 'retrograde' ? ' ℞' : p.motion === 'stationary' ? ' S' : '';
+    const flagColor = p.motion === 'retrograde' ? '#c0392b' : '#d97706';
+    const [tx, ty] = toXY(p.elon, ascDeg, r + 17);
+    parts.push(`<text x="${tx}" y="${ty}" font-size="9" text-anchor="middle" dominant-baseline="central" fill="${flag ? flagColor : '#555'}" ${flag ? 'font-weight="700"' : ''}>${deg}°${String(min).padStart(2, '0')}′${flag}</text>`);
     if (showBounds) {
       const ruler = boundOf(p.elon).ruler;
       parts.push(`<text x="${x}" y="${y + 13}" font-size="7" font-weight="700" text-anchor="middle" fill="${RULER_COLOR[ruler]}">${ruler[0]}</text>`);
