@@ -291,3 +291,36 @@ Adding them as promissors would be small; left out to keep the table basic.
 **Still unexplained.** Nothing in Morin's text bears on the two blog rows in §6
 (Mercury ☌ Mars for Diana; Saturn ☍ → IC for William): he has no special rule for
 the IC, and his single-rule statement gives our value for William's row.
+
+## 11. Gansten, *Annual Predictive Techniques* (Wessex Astrologer, 2020)
+
+Not a source for our method (it teaches **Ptolemaic proportional semi-arcs**, and says
+it does not describe position-circle methods), but useful context. Page numbers are
+from its index; the PDF is in the user's library, not the repo.
+
+- **Same mechanics for the angles** (App. II): MC → `MD = RA_promissor − RAMC`; IC →
+  the MC to the opposite point; ASC → `HD = OA_promissor − (RAMC + 90°)`,
+  `AD = asin(tan δ tan φ)`. Identical to §4 for angles.
+- **Direct and converse are both done with the primary motion** (pp.34–37); only
+  software labels mean "forwards/backwards in time". Same reading as Morin (§10).
+  Traditional wording: the *significator* is directed to the *promissor*.
+- **House system and direction system are independent** (p.37). Directions here are
+  Regiomontanus regardless of the house choice in the 2D chart.
+- **Where he differs from our choices** (recorded so we don't re-litigate):
+  - *Lunar parallax*: he uses the **topocentric** Moon ("far more accurate results",
+    ≈1° ≈ 1 year for a Moon near the horizon; pp.70–71). The Ex. 35 Moon rows match the
+    author's tool only with the **geocentric** Moon (§9), so we follow the tool.
+  - *Key*: he uses Ptolemy's 1°/yr; Naibod (Morin's, ours) is his "second most
+    common". He agrees with Morin that no key removes the spread of events before
+    and after perfection.
+- **Software settings guide** (App. III, Morinus program): method = Placidus
+  (semi-arc, Ptolemaic) / Regiomontanus / "Placidus under the pole"; Campanus ≡
+  Regiomontanus for directions; zodiacal vs mundane aspects; "use latitude of
+  significator"; key; parallax. A checklist for comparing another program's output
+  with ours.
+- **Worked semi-arc example** (App. II, Presley, Sun → ☍ Jupiter with latitude,
+  arc 25°00′) is a test case if a Ptolemaic mode is ever restored (§7).
+- **Solar returns** (ch.5): tropical year 365.2422 d vs sidereal 365.2564 d (~20 min
+  longer); early authors used a fixed constant. For timing *within* a year he relies
+  mainly on real-time transits, not directions — relevant only if returns are ever
+  added; nothing in the direction calculator depends on it.
