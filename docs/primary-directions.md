@@ -324,3 +324,36 @@ from its index; the PDF is in the user's library, not the repo.
   longer); early authors used a fixed constant. For timing *within* a year he relies
   mainly on real-time transits, not directions — relevant only if returns are ever
   added; nothing in the direction calculator depends on it.
+
+## 12. Louis, *Primary Directions in Astrology: A Primer* (2013)
+
+An explainer built around Robert Nagy's freeware **Morinus** program (an independent
+implementation; not the same thing as Borealis's software). Prefers Ptolemaic
+semi-arcs with latitude, so it is context, not a source for our method.
+
+- **Angles**: "consensus" — ASC by oblique ascension, MC by right ascension (ch.10).
+  Same as §4.
+- **Regiomontanus vs Ptolemy** (ch.10): circle-of-position directions for
+  planet-to-planet "often differ from Ptolemy's calculations by two or three years"
+  — the same divergence measured in §8 (4–6 years for the worst rows). He notes
+  Morin and Lilly used Regiomontanus with excellent results.
+- **Converse = role swap, motion unchanged** (ch.9): "A still moves to B by primary
+  motion, but the roles … have exchanged". Same reading as Morin and Gansten.
+- **Mundane (with latitude) vs zodiacal** (ch.4): Morin preferred mundane; a
+  zodiacal direction of the same pair usually falls at a different date (his Shirley
+  Temple example: 14.498° vs 15.709°, 15 months apart) and Morin treats the two as a
+  *range*. We compute mundane only.
+- **Keys** (ch.4): Ptolemy 1°; Naibod 0°59′08″ = 360/365.2422 = 1.01456 years per
+  degree (ours is the book's 0°59′08″ = 1.01465; ≈1 day at age 40); Tycho's and
+  Placidus's variable keys "less reliable in practice"; his own experimental
+  midpoint key 0°59′34″. Morin and Lilly found Naibod closest to events.
+- **Lunar parallax** (ch.4): "a difference of a year or two" for Moon directions;
+  he does not say which is right (Gansten prefers topocentric; the target author's
+  tool is geocentric — see §11, §9).
+- **Precision is a myth** (epilogue): "Precise hits are actually quite rare.
+  Originally primary directions were used to determine the approximate year."
+  Consistent with the 1-minute-of-birth-time sensitivity in §5.
+- **What could be done with it**: the Morinus program can print direction tables
+  (Regiomontanus, mundane, with latitude, chosen key). Running it on the Example 35
+  chart would give an independent implementation to diff against ours, particularly
+  for the two rows in §6 that no source explains.
