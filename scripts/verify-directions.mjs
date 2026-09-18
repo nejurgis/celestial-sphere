@@ -75,7 +75,7 @@ const DATASET = [
       ['Saturn',  '☍', null,       'Mercury', '1991-11'],
       ['Jupiter', '☍', null,       'Mercury', '1997-08'],
       ['Sun',     '□', 'dexter',   'Jupiter', '1997-08'], // blog: "August-September 1997"; significator not named, Jupiter is a life planet
-      ['Mercury', '☌', null,       'Mars',    '2017-01', { xfail: 'arc 50.5° (2012-09) vs 54.7° implied; no tested variant gives it' }],
+      ['Mercury', '☌', null,       'Mars',    '2017-01', { xfail: 'blog used the shortest-path ("modern") converse: significator\'s pole, arc 54.69° → Dec 2016. Our traditional converse (promissor\'s pole) is 50.49°; see docs §13' }],
     ],
   },
   {
@@ -83,7 +83,7 @@ const DATASET = [
     lat: 51 + 32 / 60, lon: -12 / 60,
     times: [{ label: '21:03 BST', utc: [1982, 6, 21, 20, 3] }],
     rows: [
-      ['Saturn', '☍', null, 'IC', '1997-08', { xfail: 'exact circle-of-position arc is 11.9° (1994-07); blog date equals the plain RA difference, 15.0°' }],
+      ['Saturn', '☍', null, 'IC', '1997-08', { xfail: 'blog used the shortest-path ("modern") converse: significator\'s pole = IC → plain RA difference 14.96° → Aug 1997. Our traditional converse is 11.86°; see docs §13' }],
     ],
   },
 ];

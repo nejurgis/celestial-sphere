@@ -96,7 +96,7 @@ find. Tolerance 3 months (the publications give a month).
 | Textbook Ex. 35, Tables 3.9/3.10 (12:15 and 12:16) | 13 + 8 | all within 1 month |
 | Queen Elizabeth II (thematic-directions post) | 6, incl. 3 to the 5th-house cusp | all within 1 month; 8 cusps < 1′ |
 | Diana (blog) | 3 of 4; 4 cusps < 1′ | Saturn☍→Mercury, Jupiter☍→Mercury, Sun□→Jupiter ✓ |
-| William (blog) | 0 of 1 | see below |
+| William (blog) | 0 of 1 | shortest-path converse, §6 |
 | Original list (author's tool at 12:16) | 8 of 9 | Apr 2018 is 2019 in the book's own tables; "Sun ⚹ → Sun Oct 2008" matches **Sun ⚹ → MC 2008-10-13** |
 
 Sensitivity to know when comparing: **1 minute of birth time = 20–95 days** (ASC
@@ -106,15 +106,17 @@ himself says directions give the *year*; the day comes from solar/lunar returns
 
 ## 6. Known gaps
 
-- **Diana, Mercury ☌ Mars**: blog Jan 2017 (55 y), app 2012-09 (arc 50.5° vs
-  ≈54.7°). Mercury's latitude is −4.7°. Nothing tried reproduces it.
-- **William, Saturn ☍ → IC**: blog Aug 1997, app 1994-07. The exact circle
-  intersection is 11.86°; the blog date equals the plain RA difference (15.0°),
-  which the book calls a mistaken method. Contradicted by another row (Ex. 35
-  Saturn ⚹ → MC), so probably a loose figure in the blog.
+- **Two blog rows follow the other converse convention** (resolved, §13):
+  Diana's Mercury ☌ Mars (blog Jan 2017; ours 2012-09) and William's Saturn ☍ → IC
+  (blog Aug 1997; ours 1994-07). Both are exactly reproduced by the *shortest-path*
+  ("modern") converse — arc measured under the **significator's** pole, the way the
+  Morinus freeware does it (54.69° → Dec 2016; 14.96° → Aug 1997). The book's own
+  tables and Elizabeth II's directions all follow the traditional converse we use
+  (promissor's pole), and the book (p.378) calls the shortest-path method a mistake.
+  We keep the traditional one; these two rows stay marked as known misses.
 - **Ages** in the author's tool (3.8 / 23.3 / 31.7 / 41.9) don't equal
   arc/Naibod for its own dates; dates are right, the age column is unexplained.
-- **Antiscia** (two per planet, book p.379): not implemented.
+- **Antiscia** (two per planet, book p.379): not implemented (definition in §10).
 - The "bound changes" table rows still use an older, simpler RA-advance model.
 
 ## 7. Placidus (tried, removed)
@@ -357,3 +359,43 @@ semi-arcs with latitude, so it is context, not a source for our method.
   (Regiomontanus, mundane, with latitude, chosen key). Running it on the Example 35
   chart would give an independent implementation to diff against ours, particularly
   for the two rows in §6 that no source explains.
+
+## 13. The Morinus freeware (Nagy), read from its source
+
+The user's copy (`Morinus.app`, 2012, Python 2.7 / wxPython, GPLv3) can't run on the
+current macOS, but its modules sit in `Resources/lib/python2.7/site-packages.zip` as
+`.pyo`. Decompiled with `uncompyle6` in a throwaway venv (nothing copied into this
+repo; GPL source was only read for comparison). Files: `regiomontanpd`,
+`regiocampbasepd`, `primdirs`, `planets`, `antiscia`. Findings:
+
+- **Same arc core as ours.** `arc = W_prom − W_sig`, with
+  `W_prom = RA ∓ asin(tan δ_prom · tan POLE_sig)` and the east/west side taken from the
+  **significator** (`plsig.eastern`); POLE and W of a point come from its own circle
+  of position (its `getZD` is the standard Regiomontanus zenith-distance recipe).
+  For house cusps it uses `POLE = asin(sin φ · sin ZD)` with ZD from the cusp's
+  meridian distance. Consistent with Holden's Appendix 5 and with §4.
+- **Converse is the "modern" one** (`PrimDirs.create`): `arc = W_prom − W_sig`;
+  negative → `|arc|` marked converse; `> 180°` → `360° − arc`, flipped. So even a
+  converse arc is measured under the *significator's* pole (promissor carried
+  backwards). Ours, following the book and Morin, uses the fixed point's pole.
+- **Which rows each convention explains** (our full verification set re-run with the
+  freeware's normalisation, one-line change to `computeRegiomontanusDirection`):
+  Diana's Mercury ☌ Mars → 54.69° (2016-12, blog Jan 2017) ✓ and William's Saturn ☍
+  → IC → 14.96° (1997-08, blog Aug 1997) ✓ — but every converse row of the book's
+  Table 3.9 and of Elizabeth II breaks by 12–48 years. So the two blog articles used
+  the shortest-path convention (or software implementing it) while the book and the
+  Elizabeth article use the traditional one. Direct rows are identical in both.
+- **Aspects**: only *mundane* aspects (added in RA to the significator's W) or
+  *Bianchini's* circle (`lat_aspect = asin(sin(lat)·cos(aspect))`, the instantaneous-
+  latitude circle Morin rejects). **Morin's circle of aspects is not implemented**, so
+  the freeware cannot check §3 (matching the book's remark that most programs don't
+  support Morin's method).
+- **Antiscia**: mirror of the longitude across the Cancer/Capricorn axis **keeping the
+  planet's latitude**, plus a contra-antiscion (+180°) — not the "equal declination
+  points on the ecliptic" of Morin's text (§10).
+- **Key**: Naibod coefficient `1.01456164` yr/° (= 365.2422/360), dates
+  `JD + years · 365.2421904`; Ptolemy `1.0`; Cardan `0°59′12″`. Ours: `1.014647`, same
+  to ~1 day at age 40.
+- **Secondary motion of the Moon** and a topocentric option exist in the program
+  (`SecMotion`, `options.topocentric`); the default for the Moon is not established
+  from the source alone.
