@@ -399,3 +399,41 @@ repo; GPL source was only read for comparison). Files: `regiomontanpd`,
 - **Secondary motion of the Moon** and a topocentric option exist in the program
   (`SecMotion`, `options.topocentric`); the default for the Moon is not established
   from the source alone.
+
+## 14. Year view (solar return · profections · lunar return)
+
+A direction gives the **year**; this funnel narrows it. Traditional order (Gansten
+chs.5, 7, 9; Louis glossary: "profections and solar returns were used to pinpoint the
+timing of events indicated by primary directions"; Morin: the direction that agrees
+with the annual revolution is the one that bears fruit). In the app: click a row of the
+directions table, or use "📅 Year view" for the selected pairing. Code:
+`computeYearView` in `src/astro.js`, panel in `main.js`.
+
+What it computes, with no settings:
+- **Solar return**: the instant the Sun is back at its natal longitude (tropical,
+  `Astronomy.SearchSunLongitude`), the one before and the one after the perfection
+  date; return Asc/MC for the birthplace (Gansten: cast for the place of birth).
+- **Annual profection**: `k` completed years → the natal Ascendant advanced `k` signs;
+  house `(k mod 12)+1`; **lord of the year** = domicile ruler of that sign. Flagged when
+  the lord is the promissor or significator of the direction.
+- **Monthly profection**: the solar year cut into 12 equal spans from the return
+  (2°30′ of profection a month), sign advancing one per month from the annual sign;
+  the month containing the perfection date is highlighted, lords involved in the
+  direction marked.
+- **Nearest lunar return**: the Moon back at its natal longitude (~27.3 d), nearest the
+  perfection date (bisection, ~1 minute).
+
+Choices and limits:
+- Tropical zodiac and geocentric positions, like the rest. Gansten also treats
+  sidereal returns (sidereal year ≈ 20 min longer) and Tajika year-lord selection
+  (five candidates); not implemented — the simple domicile-lord-of-the-profected-Ascendant
+  is his own recommendation ("works reliably").
+- Only the profected **Ascendant** (not Sun/Moon/lots); domicile rulers only.
+- Profection is shown as discrete steps with a monthly grid; the continuous motion
+  (1° ≈ 12 days) is used for timing only via that grid.
+- No transits, no interpretation: the point is to show *whether* the year and month echo
+  the direction. Even together these give a window of weeks, not a day (Gansten: real-time
+  transits do the fine timing).
+- `verify-directions.mjs` checks the definition (Sun/Moon at the returns equal their
+  natal longitudes; profected sign steps one per year), not published dates — none of
+  the sources tabulates returns for the example charts.

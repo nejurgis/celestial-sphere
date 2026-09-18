@@ -299,6 +299,29 @@
       #tour-panel .tour-header, #regio-panel .tour-header, #placidus-panel .tour-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
       #tour-panel #tour-title, #regio-panel #regio-title, #placidus-panel #placidus-title { font-size: 0.9rem; }
       #tour-panel #tour-narration, #regio-panel #regio-narration, #placidus-panel #placidus-narration { margin: 8px 0 0; font-size: 0.82rem; line-height: 1.5; color: #333; }
+      /* Year view: solar return + annual/monthly profection + lunar return for the
+         year a direction perfects in. No <select> inside, so left:50%+transform is fine. */
+      #year-panel {
+        position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 25;
+        background: rgba(255,255,255,0.97); border: 1px solid #e0e0e0; border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
+        padding: 12px 16px; width: min(560px, 92vw); max-height: 82vh; overflow: auto;
+      }
+      #year-panel[hidden] { display: none; }
+      #year-panel .tour-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      #year-panel #year-title { font-size: 0.95rem; }
+      #year-body { font-size: 0.83rem; line-height: 1.5; color: #333; margin-top: 8px; }
+      #year-body .yv-hit { font-size: 0.95rem; margin: 2px 0 8px; }
+      #year-body .yv-row { display: flex; gap: 10px; padding: 3px 0; border-top: 1px solid #f0f0f0; }
+      #year-body .yv-row > span:first-child { width: 128px; flex: none; color: #777; }
+      #year-body .yv-yes { color: #2f7d4f; font-weight: 700; }
+      #year-body table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.8rem; }
+      #year-body th { text-align: left; color: #777; font-weight: 600; padding: 2px 6px; }
+      #year-body td { padding: 2px 6px; border-top: 1px solid #f0f0f0; }
+      #year-body tr.yv-now td { background: #fff4d6; font-weight: 700; }
+      #year-body .yv-note { margin-top: 8px; color: #888; font-size: 0.76rem; }
+      #table-body tr[data-i] { cursor: pointer; }
+      #table-body tr[data-i]:hover td { filter: brightness(0.94); }
     </style>
   </head>
   <body>
@@ -477,8 +500,16 @@
         </div>
         <div class="bound-crossings" id="bound-crossings"></div>
         <button id="tour-start-btn" type="button" class="ghost-btn" style="margin-top: 6px;" title="Enter center view and watch the promissor sweep toward the significator — the camera follows it automatically, with live narration of what's happening">🎓 Guided tour (center view)</button>
+        <button id="year-open-btn" type="button" class="ghost-btn" style="margin-top: 6px;" title="For the year this direction perfects in: solar return, annual profection and its lord, monthly profections, nearest lunar return — the traditional way to zoom from a year to a few weeks">📅 Year view (solar return · profections)</button>
       </div>
 
+      <div id="year-panel" hidden>
+        <div class="tour-header">
+          <strong id="year-title">Year view</strong>
+          <button id="year-close-btn" type="button" class="ghost-btn">✕</button>
+        </div>
+        <div id="year-body"></div>
+      </div>
       <div id="tour-panel" hidden>
         <div class="tour-header">
           <strong id="tour-title">Guided tour</strong>

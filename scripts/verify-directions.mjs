@@ -148,5 +148,26 @@ for (const chart of DATASET) {
   console.log(`\nMorin/Holden Appendix 5 example (Mars → Jupiter, mundane): book ${want.toFixed(3)}°  app ${d.arcDeg.toFixed(3)}° ${d.swapped ? 'conv' : 'dir'}  ${ok ? 'ok' : 'FAIL'}`);
 }
 
+// ── Year view self-check (solar / lunar returns) ─────────────────────────────
+// No published figures to compare with, so check the definition itself: at the
+// solar return the Sun is back at its natal longitude, at the lunar return the
+// Moon is, and the profected sign steps one sign per completed year.
+{
+  const natal = new Date(Date.UTC(1976, 10, 29, 9, 16)), lat = 55 + 45 / 60, lon = 37 + 37 / 60;
+  const natalAsc = A.computeSkyState(natal, lat, lon).asc.deg;
+  const target = new Date(Date.UTC(2009, 1, 8));
+  const y = A.computeYearView(natal, lat, lon, target, natalAsc);
+  const elon = (k, d) => A.eclipticOf(BODY[k], d).elon;
+  const wrap = a => Math.abs(((a + 540) % 360) - 180);
+  const sunErr = wrap(elon('Sun', y.sr) - elon('Sun', natal));
+  const moonErr = wrap(elon('Moon', y.lunarReturn) - elon('Moon', natal));
+  const ascSign = Math.floor(natalAsc / 30);
+  const signOk = y.profection.signIndex === (ascSign + y.completedYears) % 12 && y.profection.house === (y.completedYears % 12) + 1;
+  const spanOk = y.sr <= target && target < y.nextSr;
+  const ok = sunErr < 0.001 && moonErr < 0.001 && signOk && spanOk;
+  if (!ok) worst = Infinity;
+  console.log(`\nYear view: Sun at return off ${sunErr.toFixed(5)}°, Moon at return off ${moonErr.toFixed(5)}°, profection ${signOk ? 'ok' : 'WRONG'}, target inside solar year ${spanOk ? 'ok' : 'WRONG'}  ${ok ? 'ok' : 'FAIL'}`);
+}
+
 console.log(`\nworst deviation (excluding known misses): ${worst} month(s) (tolerance ${TOLERANCE_MONTHS})`);
 process.exit(worst > TOLERANCE_MONTHS ? 1 : 0);

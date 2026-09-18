@@ -1326,3 +1326,78 @@ export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate,
   rows.sort((a, b) => a.arcYears - b.arcYears);
   return rows;
 }
+
+// ── Year view: solar return, annual/monthly profection, lunar return ────────
+// The traditional funnel for timing an event: a primary direction gives the
+// YEAR; the solar return and the annual profection say whether that year
+// "activates" it; the month profection and the nearest lunar return narrow
+// it to weeks (Gansten, Annual Predictive Techniques, chs.5, 7, 9; Louis,
+// Primer, glossary: "profections and solar returns were used to pinpoint the
+// timing of events indicated by primary directions"). Tropical throughout
+// (the same zodiac as everything else here); place of the return = birthplace.
+export const SIGN_RULERS = ['Mars', 'Venus', 'Mercury', 'Moon', 'Sun', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Saturn', 'Jupiter'];
+const TROPICAL_YEAR_DAYS = 365.2421904;
+const DAY_MS = 86400000;
+
+// The k-th solar return: the moment the Sun is back at its natal longitude
+// (k = 0 is birth itself).
+function solarReturn(natalDate, k) {
+  if (k <= 0) return natalDate;
+  const natalSunLon = Astronomy.SunPosition(natalDate).elon;
+  const start = new Date(natalDate.getTime() + (k * TROPICAL_YEAR_DAYS - 6) * DAY_MS);
+  const t = Astronomy.SearchSunLongitude(natalSunLon, start, 12);
+  return t ? t.date : new Date(natalDate.getTime() + k * TROPICAL_YEAR_DAYS * DAY_MS);
+}
+
+// The lunar return (Moon back at its natal longitude, ~every 27.32 d) nearest
+// to targetDate. Bisection on the signed longitude difference.
+function nearestLunarReturn(natalDate, targetDate) {
+  const natalLon = eclipticOf(Astronomy.Body.Moon, natalDate).elon;
+  const diff = t => ((eclipticOf(Astronomy.Body.Moon, new Date(t)).elon - natalLon + 540) % 360) - 180;
+  const STEP = 6 * 3600000;
+  let best = null;
+  for (let t = targetDate.getTime() - 16 * DAY_MS; t < targetDate.getTime() + 16 * DAY_MS; t += STEP) {
+    const a = diff(t), b = diff(t + STEP);
+    if (a < 0 && b >= 0 && b - a < 90) { // increasing crossing (not the ±180 wrap)
+      let lo = t, hi = t + STEP;
+      for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (diff(mid) < 0) lo = mid; else hi = mid; }
+      const found = (lo + hi) / 2;
+      if (!best || Math.abs(found - targetDate.getTime()) < Math.abs(best - targetDate.getTime())) best = found;
+    }
+  }
+  return best == null ? null : new Date(best);
+}
+
+// natalAscDeg: natal Ascendant longitude. Returns everything the panel shows.
+export function computeYearView(natalDate, latitude, longitude, targetDate, natalAscDeg) {
+  const ageYears = (targetDate.getTime() - natalDate.getTime()) / (TROPICAL_YEAR_DAYS * DAY_MS);
+  // k = completed years of life at targetDate, i.e. solarReturn(k) <= target < solarReturn(k+1).
+  let k = Math.max(0, Math.floor(ageYears));
+  while (k > 0 && solarReturn(natalDate, k) > targetDate) k--;
+  while (solarReturn(natalDate, k + 1) <= targetDate) k++;
+  const sr = solarReturn(natalDate, k), nextSr = solarReturn(natalDate, k + 1);
+
+  const ascSign = Math.floor((((natalAscDeg % 360) + 360) % 360) / 30);
+  const profectedSign = (ascSign + k) % 12;
+  const srSky = k > 0 ? computeSkyState(sr, latitude, longitude) : null;
+
+  // Monthly profection: the profected point advances one sign per month, i.e.
+  // 2°30′ a month = the solar year cut into 12 equal spans from the return.
+  const span = (nextSr.getTime() - sr.getTime()) / 12;
+  const months = [];
+  let activeMonth = 0;
+  for (let m = 0; m < 12; m++) {
+    const start = new Date(sr.getTime() + m * span), end = new Date(sr.getTime() + (m + 1) * span);
+    const signIndex = (profectedSign + m) % 12;
+    months.push({ start, end, signIndex, ruler: SIGN_RULERS[signIndex] });
+    if (targetDate >= start && targetDate < end) activeMonth = m;
+  }
+
+  return {
+    ageYears, completedYears: k, sr, nextSr,
+    srAsc: srSky?.asc?.deg ?? null, srMc: srSky?.mc?.deg ?? null,
+    profection: { house: (k % 12) + 1, signIndex: profectedSign, lord: SIGN_RULERS[profectedSign] },
+    months, activeMonth,
+    lunarReturn: nearestLunarReturn(natalDate, targetDate),
+  };
+}

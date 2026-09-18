@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeZodiacBand,
   computeAspectPlane, computeAspectPoint, computeAllDirections, computeRegiomontanusHouses,
-  computeBoundCrossings, computeRegiomontanusDirection, boundOf, planetMotion,
+  computeBoundCrossings, computeRegiomontanusDirection, boundOf, planetMotion, computeYearView,
   computeSkyRotationBasis, computeStarField, ZODIAC_SIGNS,
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
   formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
@@ -1821,6 +1821,7 @@ const tableRecomputeBtn = document.getElementById('table-recompute-btn');
 const tableCloseBtn = document.getElementById('table-close-btn');
 const tableStatus = document.getElementById('table-status');
 const tableBody = document.getElementById('table-body');
+let tableRows = []; // last computed rows, so a click can open the year view for one
 
 function computeTable() {
   if (!natalObserver) return;
@@ -1866,7 +1867,8 @@ function computeTable() {
     return ASPECT_NATURE[r.aspectGlyph] ?? '';
   }
 
-  tableBody.innerHTML = rows.map(r => {
+  tableRows = rows;
+  tableBody.innerHTML = rows.map((r, i) => {
     const dateStr = r.date.toISOString().slice(0, 10);
 
     if (r.kind === 'bound') {
@@ -1895,7 +1897,7 @@ function computeTable() {
     // the table for reference), just greyed rather than competing visually
     // with the ones someone will actually live to see.
     const longArcClass = r.arcYears > 90 ? 'long-arc' : '';
-    return `<tr class="type-${type.toLowerCase()} ${natureClass} ${longArcClass}">
+    return `<tr data-i="${i}" title="Open year view" class="type-${type.toLowerCase()} ${natureClass} ${longArcClass}">
       <td>${pointLabel(r.significatorKey)}</td>
       <td>${promissorLabel}</td>
       <td>${position}</td>
@@ -1941,3 +1943,65 @@ chart2dBoundsCheckbox.addEventListener('change', () => { if (!chart2dPanel.hidde
 resize();
 rebuild();
 animate();
+
+// ── Year view ────────────────────────────────────────────────────────────
+// Zoom from "the year a direction perfects" to weeks: solar return, annual
+// profection (lord of the year), monthly profections, nearest lunar return.
+// See astro.js computeYearView.
+
+const yearPanel = document.getElementById('year-panel');
+const yearTitleEl = document.getElementById('year-title');
+const yearBodyEl = document.getElementById('year-body');
+const YEAR_ASC_DEG = () => lastState.asc.deg;
+
+function fmtUT(d) { return d.toISOString().slice(0, 16).replace('T', ' ') + ' UT'; }
+function fmtDay(d) { return d.toISOString().slice(0, 10); }
+function signName(i) { return `${ZODIAC_SIGNS[i].glyph}\uFE0E ${ZODIAC_SIGNS[i].name}`; }
+
+function openYearView({ title, date, promissorKey, significatorKey }) {
+  if (!lastState?.asc) return;
+  const y = computeYearView(natalDate, natalObserver.latitude, natalObserver.longitude, date, YEAR_ASC_DEG());
+  const lord = y.profection.lord;
+  const involved = lord === promissorKey || lord === significatorKey;
+  const daysAfterSr = Math.round((date - y.sr) / 86400000);
+  const lr = y.lunarReturn;
+  const lrDays = lr ? Math.round((lr - date) / 86400000) : null;
+
+  const rows = y.months.map((m, i) => `<tr class="${i === y.activeMonth ? 'yv-now' : ''}">
+      <td>${i + 1}</td><td>${fmtDay(m.start)} → ${fmtDay(m.end)}</td><td>${signName(m.signIndex)}</td><td>${pointLabel(m.ruler)} ${m.ruler}${m.ruler === promissorKey || m.ruler === significatorKey ? ' <span class="yv-yes">●</span>' : ''}</td>
+    </tr>`).join('');
+
+  yearTitleEl.textContent = `Year view — ${title}`;
+  yearBodyEl.innerHTML = `
+    <div class="yv-hit">Perfects <b>${fmtDay(date)}</b> · age ${y.ageYears.toFixed(1)} · ${daysAfterSr} days after the solar return</div>
+    <div class="yv-row"><span>Solar return</span><span>${fmtUT(y.sr)}${y.completedYears === 0 ? ' (birth)' : ''} → ${fmtUT(y.nextSr)}<br>
+      year of life ${y.completedYears + 1}${y.srAsc != null ? ` · return Asc ${formatEclipticDegree(y.srAsc)} · MC ${formatEclipticDegree(y.srMc)}` : ''}</span></div>
+    <div class="yv-row"><span>Annual profection</span><span>house ${y.profection.house} · ${signName(y.profection.signIndex)} · lord of the year ${pointLabel(lord)} ${lord}
+      ${involved ? '<span class="yv-yes">— the lord is in this direction</span>' : ''}</span></div>
+    <div class="yv-row"><span>Nearest lunar return</span><span>${lr ? `${fmtUT(lr)} (${lrDays === 0 ? 'the same day' : `${Math.abs(lrDays)} days ${lrDays < 0 ? 'before' : 'after'}`})` : '—'}</span></div>
+    <table><thead><tr><th>#</th><th>Monthly profection (from the return)</th><th>Sign</th><th>Lord</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="yv-note">Highlighted: the month containing the perfection date. ● marks a lord that is the promissor or significator. Tropical zodiac, birthplace, geocentric. A direction gives the year; the return and profections show whether the year activates it — a window of weeks, not a day.</div>`;
+  yearPanel.hidden = false;
+}
+
+document.getElementById('year-close-btn').addEventListener('click', () => { yearPanel.hidden = true; });
+
+document.getElementById('year-open-btn').addEventListener('click', () => {
+  if (!direction) return;
+  const date = new Date(natalDate.getTime() + direction.arcYears * 365.2421904 * 86400000);
+  const aspect = ASPECT_GLYPHS[aspectSelect.value] ?? '';
+  openYearView({
+    title: `${pointLabel(promissorSelect.value)}${aspectSelect.value !== '0' ? ' ' + aspect : ''} → ${pointLabel(significatorSelect.value)}`,
+    date, promissorKey: promissorSelect.value, significatorKey: significatorSelect.value,
+  });
+});
+
+tableBody.addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-i]');
+  const r = tr && tableRows[Number(tr.dataset.i)];
+  if (!r || r.kind !== 'direction') return;
+  openYearView({
+    title: `${pointLabel(r.promissorKey)}${r.aspectGlyph !== '☌' ? r.aspectGlyph : ''}${r.aspectDir === 'dexter' ? ' (dex)' : ''} → ${pointLabel(r.significatorKey)}`,
+    date: r.date, promissorKey: r.promissorKey, significatorKey: r.significatorKey,
+  });
+});
