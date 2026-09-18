@@ -869,7 +869,14 @@ const norm3 = v => { const n = Math.hypot(...v) || 1; return [v[0] / n, v[1] / n
 // years long, which put its whole aspect plane in the wrong place.
 const NODE_SEARCH_DAYS = { Mercury: 250, Venus: 400, Mars: 900, Jupiter: 2500, Saturn: 6000 };
 
+// mode: 'inclination' — plane through the planet whose inclination to the
+// ecliptic equals the planet's maximum latitude in the current swing (the
+// planet's "maximum elevation"); 'two-point' — the great circle through the
+// planet and the point where that maximum occurs. The two differ whenever the
+// planet is not ~90° of longitude from its max-elevation point.
+export const ASPECT_PLANE_MODE = { value: 'inclination' };
 export function computeAspectPlane(body, date, observer, radius = 1, searchWindowDays = NODE_SEARCH_DAYS[body] ?? 250, steps = 120) {
+  const mode = ASPECT_PLANE_MODE.value;
   const nowEcl = eclipticOf(body, date);
   const P0 = eclipticToCartesian(nowEcl.elon, nowEcl.elat);
   const sampleElat = d => eclipticOf(body, new Date(date.getTime() + d * 86400000)).elat;
@@ -921,7 +928,7 @@ export function computeAspectPlane(body, date, observer, radius = 1, searchWindo
   const maxEcl = eclipticOf(body, new Date(date.getTime() + maxDay * 86400000));
   const Pmax = eclipticToCartesian(maxEcl.elon, maxEcl.elat);
   const crossPP = cross3(P0, Pmax);
-  if (maxDay !== 0 && Math.hypot(...crossPP) > 1e-3 && inclinationDeg > 1e-3) {
+  if (mode === 'two-point' && maxDay !== 0 && Math.hypot(...crossPP) > 1e-3 && inclinationDeg > 1e-3) {
     N = norm3(crossPP);
     // Orient N so that increasing phi (u->v) runs toward INCREASING ecliptic
     // longitude at P0 — computeAspectPoint's sinister/dexter sign depends on it.
@@ -942,14 +949,29 @@ export function computeAspectPlane(body, date, observer, radius = 1, searchWindo
     ]);
     const Na = buildN(theta0);
     const Nb = buildN(-theta0);
-    // Disambiguate: whichever candidate's in-plane tangent direction at P0
-    // best matches the planet's real short-term motion direction.
-    const laterEcl = eclipticOf(body, new Date(date.getTime() + 6 * 3600000));
-    const P1 = eclipticToCartesian(laterEcl.elon, laterEcl.elat);
-    const realDir = norm3(sub3(P1, P0));
-    const tangentAt = M => norm3(cross3(M, P0));
-    const score = M => Math.abs(dot3(tangentAt(M), realDir));
-    N = score(Na) >= score(Nb) ? Na : Nb;
+    // Two mirror-image planes have that inclination through P0 (the planet
+    // could be on the ascending or the descending side of the plane).
+    // Disambiguate by WHERE the plane's own highest point falls: it must be
+    // where the planet actually reached its maximum elevation (Pmax). This
+    // replaces a test on the planet's instantaneous motion direction, which
+    // is meaningless for a planet at its station (Saturn at the book's chart
+    // moves 0.003°/day) and sent Saturn's plane to the wrong solution.
+    const peakElon = M => {
+      const zp = sub3(Z_AXIS, scale3(M, dot3(Z_AXIS, M))); // in-plane direction of steepest ascent
+      const peak = scale3(norm3(zp), Math.sign(maxEcl.elat) || 1);
+      return cartesianToEcliptic(peak).elon;
+    };
+    const angDiff = (a, b) => { const d = Math.abs(((a - b) % 360 + 540) % 360 - 180); return d; };
+    if (maxDay !== 0) {
+      N = angDiff(peakElon(Na), maxEcl.elon) <= angDiff(peakElon(Nb), maxEcl.elon) ? Na : Nb;
+    } else {
+      // Planet is AT its maximum: fall back to its real motion direction.
+      const laterEcl = eclipticOf(body, new Date(date.getTime() + 6 * 3600000));
+      const P1 = eclipticToCartesian(laterEcl.elon, laterEcl.elat);
+      const realDir = norm3(sub3(P1, P0));
+      const score = M => Math.abs(dot3(norm3(cross3(M, P0)), realDir));
+      N = score(Na) >= score(Nb) ? Na : Nb;
+    }
     const east = norm3(cross3(Z_AXIS, P0));
     if (dot3(cross3(N, P0), east) < 0) N = N.map(x => -x);
   }

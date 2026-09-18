@@ -13,6 +13,9 @@ Reference material (the "book" and "blog" below):
 
 * *Predictive Astrology Textbook*, ch. 3, pp. 377–389 — Example №35, birth
   1976-11-29 12:15 UTC+3, 37°37′E 55°45′N (rectified to 12:16).
+* The same author's blog post on Queen Elizabeth II
+  (morinus-astrology.com/thematic-directions): six dated directions, several to
+  the 5th-house cusp, plus cusps — the cleanest test set (all six reproduced).
 * The same author's blog post on Princess Diana
   (morinus-astrology.com/diana-death): a second chart with dated directions and
   Regiomontanus cusps. It states that the houses are Regiomontanus and mentions
@@ -22,14 +25,13 @@ Reference material (the "book" and "blog" below):
 ## 1. Status in one paragraph
 
 Against 13 published forecasts at the book's official time (12:15) and 8 at its
-rectified time (12:16), 11 of 13 land within ±2 months of the published *month*
-(the published resolution) and every row is within 3. Against the blog's Diana
-chart, all four Regiomontanus cusps match to 0.2′ and three of four directions
-match to the month. Aspects to the Ascendant, to the Sun, Venus, Jupiter,
-Mercury and the Moon, and Saturn-as-promissor all fit. **Three rows are not
-reproduced** and are listed in [§10](#10-known-discrepancies): two Mars→Mars
-aspects (2–3 months early), Diana's Mercury→Mars (4½ years early), and William's
-Saturn☍→IC (3 years early). Antiscia are not implemented.
+rectified time (12:16), every row is within **1 month** of the published month
+(the published resolution). Queen Elizabeth II's six dated directions (incl.
+three to the 5th-house cusp) match to the month, and all Regiomontanus cusps of
+three blog charts match to under 1′. Diana's Saturn☍→Mercury, Jupiter☍→Mercury
+and Sun□→Jupiter match. **Two rows are not reproduced** — Diana's Mercury→Mars
+(4½ years early) and William's Saturn☍→IC (3 years early); neither involves an
+aspect plane ([§10](#10-known-discrepancies)). Antiscia are not implemented.
 
 ## 2. Conventions and inputs
 
@@ -85,28 +87,42 @@ A *point* is an RA/Dec pair (of date). Kinds:
 
 Book, pp. 378–379. Aspects are *not* cast on the ecliptic (that would be
 "zodiacal directions with the planet's latitude", which the book says is off by
-years). Instead: the great circle through **the planet's current position** and
-**its point of maximum elevation above the ecliptic on the path from the
-previous node to the next node**. Implementation (`computeAspectPlane`,
-`astro.js:872`):
+years). Instead a plane is built from the planet's apparent motion: it "passes
+through two points — the planet's current position and the point of maximum
+elevation above the ecliptic on the planetary path from the past to the next
+node". Implementation (`computeAspectPlane`, `astro.js`):
 
 1. Sample the planet's ecliptic latitude ± a per-body window to find the previous
-   and next latitude nodes (sign changes), then the day of maximum |latitude|
-   between them. Windows (`NODE_SEARCH_DAYS`): Mercury 250 d, Venus 400, Mars 900,
-   Jupiter 2500, Saturn 6000. Coarse stride = window/300 days, refined to 1 day.
-2. Plane normal **N = P₀ × P_max** (P₀ = current position, P_max = max-elevation
-   point, both on the unit sphere in ecliptic coordinates).
-3. Orient N so that increasing phase runs toward **increasing ecliptic longitude**
-   at P₀.
+   and next latitude nodes (sign changes), then the maximum |latitude| between
+   them and the day/longitude where it occurs (**P_max**). Windows
+   (`NODE_SEARCH_DAYS`): Mercury 250 d, Venus 400, Mars 900, Jupiter 2500, Saturn
+   6000. Coarse stride = window/300 days, refined to 1 day.
+2. The plane passes through the planet's current position P₀ and has an
+   **inclination to the ecliptic equal to that maximum latitude**.
+3. Two mirror-image planes have that inclination through P₀ (ascending vs
+   descending side). Choose the one whose **own highest point falls at P_max's
+   longitude** — i.e. where the planet really peaked.
 4. The aspect point is the point on this circle displaced from the planet by the
    aspect angle **along the circle**: 60/90/120/180°.
-   * **sinister = +offset** (toward increasing longitude), **dexter = −offset**.
+   * **sinister = +offset** (toward increasing longitude), **dexter = −offset**;
+     the plane is oriented so this holds.
    * 0° is the planet itself (with its own latitude).
-5. Fallbacks: if P₀ ≈ P_max or the latitude is ≈ 0 (the Sun), use an
-   inclination-based construction, which for the Sun is the ecliptic itself.
+5. If the planet is *at* its maximum (P_max = P₀), the branch is chosen by its
+   short-term motion. The Sun (latitude ≈ 0) gives the ecliptic itself.
 
-Verified to matter: a 250-day window put Saturn's plane in the wrong place and
-made its aspects 20–40 months off.
+**Why not "the great circle through P₀ and P_max"** (`ASPECT_PLANE_MODE = 'two-point'`,
+kept for comparison)? It is the literal reading of "passes through two points",
+but it tilts the plane by `atan(tan(lat_max)/sin Δλ)` where Δλ is the longitude
+gap between P₀ and P_max — 15° instead of 8.4° for Elizabeth II's Venus (32° gap),
+putting the sextile point at latitude −12.9° instead of −7.1°. The book-implied
+point (solved for from her two Venus dates) is at −7.1°, matching the
+inclination reading. Across all datasets the inclination reading is exact where the
+two-point reading is 1–3 months off (Mars, Saturn) or years off (Elizabeth's Venus).
+
+Two more things that mattered: a 250-day window put Saturn's plane in the wrong
+place (20–40 months off), and choosing between the mirror planes by the planet's
+instantaneous motion direction failed for planets at a station (Saturn in the
+book's chart moves 0.003°/day) — see step 3.
 
 ## 5. Which positions directions use
 
@@ -202,6 +218,7 @@ alternatives.
 | 3 | Angles | closed form, geometric horizon | sampled, refracted horizon | up to ~1–2° → **1–2 years** | fixed |
 | 4 | Position type | geocentric | topocentric | Moon: **~1.5 years**; others small | verified |
 | 5 | Aspect construction | Morinus circle of aspects (§4.1) | zodiacal lat 0; zodiacal keeping the planet's latitude; Ptolemy | **1–2 years** (Venus ⚹→ASC: 2000-10 vs 1998-03 vs 2002-03) | verified — only Morinus fits |
+| 5b | Plane construction | inclination = max latitude, branch by peak location | great circle through planet and P_max ("two-point"); branch by motion direction | Elizabeth's Venus **1.5–8 years**; Mars 2–3 mo; Saturn 1–2 mo | verified (all datasets) |
 | 6 | Node window | per-planet (Saturn 6000 d) | fixed 250 d | Saturn **20–40 months** | verified |
 | 7 | Arc method | Regiomontanus pole + oblique ascension | Placidus semi-arc; Campanus; raw RA; Placidus in zodiaco | for planet significators **4–6 years**; ASC significator: identical to Placidus | verified |
 | 8 | Pole formula | `tan p = tan φ · |sin A|` (A = circle's equator crossing) | Placidus pole; other Regiomontanus derivations | tested several: Regiomontanus is the only one matching all rows | verified |
@@ -219,31 +236,27 @@ uncertainty is already 1–2 days).
 
 ## 10. Known discrepancies
 
-Rows the app does not reproduce (all run by `npm run verify:directions`; rows
-marked *known miss* there do not fail the check).
+Rows the app does not reproduce (run by `npm run verify:directions`; rows marked
+*known miss* there do not fail the check). The previously listed Mars→Mars,
+Saturn→Venus and Saturn→DSC residuals (2–3 months) are gone since the plane
+construction was corrected (§4.1); all book rows are now within 1 month.
 
 | Direction | Source | Expected | App | Note |
 |---|---|---|---|---|
-| Mars ⚹(dexter) → Mars (12:15) | book | Jan 2007 | Nov 2006 | −2 mo |
-| Mars □(dexter) → Mars (12:15) | book | Dec 2014 | Sep 2014 | −3 mo |
-| Saturn △(dexter) → Venus (12:15) | book | Mar 2016 | May 2016 | +2 mo |
-| Saturn ⚹ → DSC (12:15) | book | Feb 2013 | Apr 2013 | +2 mo |
 | **Mercury ☌ Mars** (Diana) | blog | Jan 2017 (55) | 2012-09 | arc 50.5° vs ≈54.7° implied — **4½ yr** |
 | **Saturn ☍ → IC** (William) | blog | Aug 1997 | 1994-07 | arc 11.9° vs 15.0° implied — **3 yr** |
 
-**Mars→Mars.** Both are converse directions of a Mars aspect to Mars. The
-alternatives tried for the aspect point (zodiacal lat 0, same latitude) are 1–2
-years off, so the plane construction is the best available. Candidates: the
-exact definition of "previous node"/"maximum elevation" for Mars (its latitude
-changes sign several times per swing), or a Mars-specific detail in the source
-software.
+Neither uses an aspect plane (a conjunction, and an opposition, which is the
+antipode of the planet), so they are unaffected by §4.1.
 
 **Diana's Mercury→Mars.** Mercury has a large latitude (−4.7°). Variants tried,
 none of which give 54.7°: Mercury and/or Mars projected to the ecliptic (40.95°,
 42.77°, 48.63°), swapping promissor/significator (same arc), plain RA difference
-(60.7°). The blog's own wording ("Mercury to Mars") does not say which is
-promissor, nor whether it is a conjunction rather than another aspect; the text
-I have is a summary, so an aspect-vs-conjunction mix-up is possible.
+(60.7°). The blog says "Mercury/Sun/Jupiter directed toward Mars" and "Mars directed
+towards Mercury/Sun/Jupiter or the Ascendant" (conjunctions), lists the result as
+"Mercury to Mars — 55 years old, January 2017", and gives no arc or degrees. The
+other 2017-adjacent rows (e.g. Venus ☍ Mars 2017-12, Mercury ⚹ Jupiter 2017-05)
+do not obviously correspond either, so the label may be loose.
 
 **William's Saturn☍→IC.** The exact intersection of the IC's parallel with the
 Saturn-opposition point's circle of position is at 11.86° (verified by root

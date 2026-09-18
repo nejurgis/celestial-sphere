@@ -9,6 +9,10 @@
 //    good to a month.
 //  * morinus-astrology.com/diana-death (Princess Diana, 1961-07-01 19:45 +01:00,
 //    and Prince William, 1982-06-21 21:03 +01:00): dated directions + cusps.
+//  * morinus-astrology.com/thematic-directions (Queen Elizabeth II, 1926-04-21
+//    02:40 +01:00): six dated directions incl. to the 5th-house cusp, + cusps.
+//    A significator 'C<n>' means house cusp n directed as its zodiac degree
+//    (ecliptic latitude 0).
 //
 // Row: [promissor, aspect glyph, sinister|dexter, significator, ...book month per time]
 // (sinister = +offset in longitude, dexter = −offset). A trailing { xfail: 'why' }
@@ -23,6 +27,22 @@ const TOLERANCE_MONTHS = 3;
 const CUSP_TOLERANCE_DEG = 0.03; // 2′
 
 const DATASET = [
+  {
+    name: 'Queen Elizabeth II (blog)',
+    lat: 51.5, lon: -9 / 60,
+    times: [{ label: '02:40 BST', utc: [1926, 4, 21, 1, 40] }],
+    cusps: { 2: [16, 8], 3: [3, 38], 5: [10, 9], 6: [25, 33], 8: [16, 8], 9: [3, 38], 11: [10, 9], 12: [25, 33] },
+    // Blog gives the dates below as the promittor "approaching" the significator;
+    // for the cusp the author adds nine months for the birth (not applied here).
+    rows: [
+      ['Venus', '⚹', 'sinister', 'C5',      '1947-12'],
+      ['Moon',  '□', 'dexter',   'C5',      '1949-10'],
+      ['Moon',  '□', 'dexter',   'Mercury', '1952-05'],
+      ['Venus', '⚹', 'sinister', 'Mercury', '1956-07'],
+      ['Moon',  '⚹', 'sinister', 'Moon',    '1959-12'],
+      ['Moon',  '△', 'dexter',   'C5',      '1963-04'],
+    ],
+  },
   {
     name: 'Example 35 (Borealis)',
     lat: 55 + 45 / 60, lon: 37 + 37 / 60,
@@ -77,8 +97,11 @@ for (const chart of DATASET) {
     const s = A.computeSkyState(date, chart.lat, chart.lon);
     const angles = { mc: s.mc, ic: s.ic, asc: s.asc, dsc: s.dsc };
     const ang = { ASC: s.asc, DSC: s.dsc, MC: s.mc, IC: s.ic };
-    const resolve = k => BODY[k] ? { key: k, body: BODY[k] } : { key: k, ra: ang[k].ra, dec: ang[k].dec };
-    const rows = A.computeAllDirections(KEYS, resolve, k => BODY[k], date, s.observer, 1, 120, { includeBoundCrossings: false, angles });
+    const cuspsAll = A.computeRegiomontanusHouses(date, s.observer, angles);
+    const cuspPoint = k => { const e = A.eclipticPointToEquatorial(cuspsAll[k.slice(1)], 0, date); return { key: k, ra: e.ra, dec: e.dec }; };
+    const resolve = k => /^C\d+$/.test(k) ? cuspPoint(k) : BODY[k] ? { key: k, body: BODY[k] } : { key: k, ra: ang[k].ra, dec: ang[k].dec };
+    const keys = [...KEYS, ...new Set(chart.rows.flatMap(r => [r[0], r[3]]).filter(k => /^C\d+$/.test(k)))];
+    const rows = A.computeAllDirections(keys, resolve, k => BODY[k], date, s.observer, 1, 120, { includeBoundCrossings: false, angles });
     console.log(`\n${chart.name} — ${t.label}  (ASC ${A.formatEclipticDegree(s.asc.deg)}, MC ${A.formatEclipticDegree(s.mc.deg)})`);
 
     if (chart.cusps) {
