@@ -527,28 +527,11 @@ export function computeRegiomontanusDirection(promissor, significator, natalDate
   return buildDirectionResult(moving, fixed, movingEq, swapped ? converse : direct, swapped, natalDate, observer, radius, dirOpts);
 }
 
-// ── Primary directions (Placidus semi-arc, "in mundo" via the diurnal/
-// nocturnal semicircle) ──────────────────────────────────────────────────
-// Where computeDirection treats every point uniformly via its raw RA
-// (Regiomontanus's circle-of-position method), Placidus's semi-arc system —
-// "the most influential system underlying modern ephemeris-based
-// directing" — instead measures a point's mundane position as a FRACTION of
-// whichever semi-arc it's currently traveling: diurnal (above horizon,
-// between ASC and DSC via the MC) or nocturnal (below, via the IC).
-// cos(S_diurnal) = −tan(lat)·tan(dec); S_nocturnal = 180°−S_diurnal.
-//
-// Primary motion advances a point's RA, which DECREASES its hour angle
-// H = RAMC−RA at the same rate — so unlike plain RA (which simply wraps
-// every 360°), a point's semi-arc FRACTION isn't periodic in a simple way:
-// which semi-arc even applies flips every time it crosses a horizon or
-// meridian. The fix used here is the same rescaling Placidus house cusps
-// themselves use — remap each quadrant (MC→ASC, ASC→IC, IC→DSC, DSC→MC) to
-// exactly 90° regardless of its true angular width, giving a single
-// continuous, monotonic "mundo angle" M(H) that primary motion decreases
-// smoothly through, quadrant after quadrant, however many years the arc
-// spans — then solve for the crossing numerically (bisection), matching
-// this file's existing "sample and solve" approach to angles/houses rather
-// than hand-deriving per-quadrant case formulas.
+// ── Placidus semi-arc helpers (drawing / house construction) ───────────────
+// The helpers below (semiArcsOf, hourAngleDeg, placidusQuadrantAngle,
+// placidusUnwrappedAngle, placidusArcDeg) predate the direction code and are
+// still used by the Placidus house construction. computePlacidusDirection no
+// longer uses them; it uses placidusMundanePosition below.
 function semiArcsOf(decDeg, latDeg) {
   const x = Math.max(-1, Math.min(1, -Math.tan((latDeg * Math.PI) / 180) * Math.tan((decDeg * Math.PI) / 180)));
   const diurnal = (Math.acos(x) * 180) / Math.PI;
@@ -597,30 +580,74 @@ function placidusArcDeg(hourAngle0, sDiurnal, targetH, targetSDiurnal) {
   return hi;
 }
 
-// angles: { mc } (only mc.ra — RAMC — is needed; from computeSkyState).
+
+// ── Primary directions (Placidus, in mundo) ────────────────────────────────
+// Same skeleton as the Regiomontanus system above; only the significator's
+// "mundane position" differs. Placidus's mundane position (source text,
+// "Mundane Position in the Placidus System") is where the point's semi-arc
+// proportion, projected on the equator, lands:
+//     R      = MD / SA           (meridian distance ÷ diurnal or nocturnal
+//                                  semi-arc — upper meridian & diurnal above
+//                                  the horizon, lower & nocturnal below)
+//     RA_M   = RAMC(or IC) ± 90° · R
+//     SA_diurnal = 90° + AD,  SA_nocturnal = 90° − AD,  AD = asin(tan φ tan δ)
+// Two points are "conjunct in mundo" when their mundane positions coincide.
+//   direct   — promissor carried west along its parallel until ITS mundane
+//              position equals the significator's;
+//   converse — the reverse (significator carried onto the promissor's).
+// Checked against the source's worked example (Churchill, Sun → Mercury:
+// mundane position 233°42′, arc 24°25′).
+export function placidusMundanePosition(raDeg, decDeg, ramcDeg, latDeg) {
+  const r = Math.PI / 180;
+  const x = Math.max(-1, Math.min(1, Math.tan(latDeg * r) * Math.tan(decDeg * r)));
+  const ad = (Math.asin(x) * 180) / Math.PI;
+  const signed = a => ((a % 360) + 540) % 360 - 180; // (-180,180]
+  const hourAngle = signed(ramcDeg - raDeg);
+  const upper = Math.abs(hourAngle) <= 90 + ad;
+  const ref = upper ? ramcDeg : ramcDeg + 180;
+  const semiArc = upper ? 90 + ad : 90 - ad;
+  const md = signed(raDeg - ref);
+  const ratio = semiArc > 1e-9 ? Math.min(1, Math.abs(md) / semiArc) : 0;
+  return (((ref + Math.sign(md) * 90 * ratio) % 360) + 360) % 360;
+}
+
+// Arc (deg, >=0) the point at (raDeg, decDeg) must be carried westward (hour
+// angle increasing) for its mundane position to reach targetMP (deg RA).
+function placidusArcToMP(raDeg, decDeg, targetMP, ramcDeg, latDeg) {
+  const r = Math.PI / 180;
+  const x = Math.max(-1, Math.min(1, Math.tan(latDeg * r) * Math.tan(decDeg * r)));
+  const ad = (Math.asin(x) * 180) / Math.PI;
+  const saU = 90 + ad, saL = 90 - ad;
+  const signed = a => ((a % 360) + 540) % 360 - 180;
+  const H0 = signed(ramcDeg - raDeg);
+  // Target in mundane space measured from the MC: 0 = MC, ±90 = horizon, ±180 = IC.
+  const X = signed(targetMP - ramcDeg);
+  const ax = Math.abs(X);
+  // Invert the piecewise-linear mundane mapping with THIS point's own semi-arcs.
+  // Mundane RA offset from the MC is minus the hour angle, hence the leading minus.
+  const Ht = -Math.sign(X) * (ax <= 90 ? (ax / 90) * saU : saU + ((ax - 90) / 90) * saL);
+  return (((Ht - H0) % 360) + 360) % 360;
+}
+
+// angles: { mc } (only mc.ra — RAMC — is needed).
 export function computePlacidusDirection(promissor, significator, natalDate, observer, angles, radius = 1, opts = {}) {
   const pEq = resolveEquatorial(promissor, natalDate, observer);
   const sEq = resolveEquatorial(significator, natalDate, observer);
-  const ramcHours = angles.mc.ra;
-  const lat = observer.latitude;
+  const ramc = angles.mc.ra * 15, lat = observer.latitude;
+  const dirOpts = { ...opts, raSign: -1 };
 
-  const Hp = hourAngleDeg(pEq.ra, ramcHours), Hs = hourAngleDeg(sEq.ra, ramcHours);
-  const Sp = semiArcsOf(pEq.dec, lat).diurnal, Ss = semiArcsOf(sEq.dec, lat).diurnal;
+  const isSelfReturn = opts.selfReturn && promissor.key === significator.key;
+  if (isSelfReturn) return buildDirectionResult(promissor, significator, pEq, 360, false, natalDate, observer, radius, dirOpts);
 
-  const isSelfReturn = opts.selfReturn && promissor.key === significator.key && Hp === Hs;
-  if (isSelfReturn) return buildDirectionResult(promissor, significator, pEq, 360, false, natalDate, observer, radius, opts);
-
-  // Report whichever direction (promissor->significator, or its converse)
-  // completes sooner — same spirit as computeDirection's >180° swap rule,
-  // generalized since Placidus's arc isn't bounded to [0,360) the same way.
-  const direct = placidusArcDeg(Hp, Sp, Hs, Ss);
-  const converse = placidusArcDeg(Hs, Ss, Hp, Sp);
-  const swapped = converse < direct;
+  const mpP = placidusMundanePosition(pEq.ra * 15, pEq.dec, ramc, lat);
+  const mpS = placidusMundanePosition(sEq.ra * 15, sEq.dec, ramc, lat);
+  const direct = placidusArcToMP(pEq.ra * 15, pEq.dec, mpS, ramc, lat);
+  const converse = placidusArcToMP(sEq.ra * 15, sEq.dec, mpP, ramc, lat);
+  const swapped = direct > 180; // same rule as the Regiomontanus system (source, p.378)
   const moving = swapped ? significator : promissor;
   const fixed = swapped ? promissor : significator;
   const movingEq = swapped ? sEq : pEq;
-
-  return buildDirectionResult(moving, fixed, movingEq, swapped ? converse : direct, swapped, natalDate, observer, radius, opts);
+  return buildDirectionResult(moving, fixed, movingEq, swapped ? converse : direct, swapped, natalDate, observer, radius, dirOpts);
 }
 
 // Every Egyptian-bound change the moving point passes through over the
@@ -874,6 +901,9 @@ const NODE_SEARCH_DAYS = { Mercury: 250, Venus: 400, Mars: 900, Jupiter: 2500, S
 // planet's "maximum elevation"); 'two-point' — the great circle through the
 // planet and the point where that maximum occurs. The two differ whenever the
 // planet is not ~90° of longitude from its max-elevation point.
+// 'inclination' picks the mirror plane by where the maximum really falls in
+// longitude; 'morin-k' by whether the planet is approaching/leaving the maximum
+// in TIME (Morin's k = ±1) — identical unless the planet is retrograde.
 export const ASPECT_PLANE_MODE = { value: 'inclination' };
 export function computeAspectPlane(body, date, observer, radius = 1, searchWindowDays = NODE_SEARCH_DAYS[body] ?? 250, steps = 120) {
   const mode = ASPECT_PLANE_MODE.value;
@@ -962,7 +992,16 @@ export function computeAspectPlane(body, date, observer, radius = 1, searchWindo
       return cartesianToEcliptic(peak).elon;
     };
     const angDiff = (a, b) => { const d = Math.abs(((a - b) % 360 + 540) % 360 - 180); return d; };
-    if (maxDay !== 0) {
+    if (maxDay !== 0 && mode === 'morin-k') {
+      // Morin's rule (as written by the source author): k = +1 if the planet
+      // is moving TOWARD its maximum latitude in time, -1 if away; the plane's
+      // peak then lies at higher longitude than the planet for k = +1, lower
+      // for k = -1 — regardless of where the maximum really falls in
+      // longitude (they differ for a retrograde planet).
+      const k = Math.sign(maxDay);
+      const side = M => Math.sign(((peakElon(M) - nowEcl.elon + 540) % 360) - 180);
+      N = side(Na) === k ? Na : Nb;
+    } else if (maxDay !== 0) {
       N = angDiff(peakElon(Na), maxEcl.elon) <= angDiff(peakElon(Nb), maxEcl.elon) ? Na : Nb;
     } else {
       // Planet is AT its maximum: fall back to its real motion direction.
