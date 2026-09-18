@@ -512,9 +512,10 @@ function updateLegend(layers, significatorKey, promissorKey) {
   legendRows.forEach(row => { row.hidden = !visible[row.dataset.layer]; });
 }
 
+let selfConjunctionSelected = false;
 function updateReadout() {
   if (!direction) {
-    readout.textContent = '—';
+    readout.textContent = selfConjunctionSelected ? 'Same point — choose another significator' : '—';
     directionPanel.classList.remove('hit', 'long-arc');
     return;
   }
@@ -1022,29 +1023,44 @@ function rebuild() {
   }
 
   const promissorKey = promissorSelect.value;
-  const aspectDeg = parseFloat(aspectSelect.value) * parseFloat(aspectDirectionSelect.value);
+  const aspectAbs = parseFloat(aspectSelect.value);
   direction = null;
   directionMarker = null;
   directionYears = 0;
-  if (significatorKey && promissorKey) {
+  // A planet directed to its own conjunction is a full primary revolution
+  // (~365 years) — meaningless, and the table leaves it out for the same reason.
+  const selfConjunction = !!promissorKey && promissorKey === significatorKey && aspectAbs === 0;
+  selfConjunctionSelected = selfConjunction;
+  if (significatorKey && promissorKey && !selfConjunction) {
     let promissorPoint = resolveDirectionPoint(promissorKey, state);
 
     // A non-conjunction aspect is cast IN THE PROMISSOR'S ASPECT PLANE, not
     // the ecliptic — that's the whole point of the Morinus construction.
     // Only meaningful for a real body (angles sit at elat=0, so their
     // "aspect plane" would just be the ecliptic itself).
-    if (aspectDeg !== 0 && BODY_BY_KEY[promissorKey]) {
+    // Each sextile/square/trine has a sinister (forward) and a dexter
+    // (backward) point; there is no reason to make the user pick — one of the
+    // two can be hundreds of years away — so the one that perfects first wins.
+    const significatorPoint = resolveDirectionPoint(significatorKey, state);
+    const candidates = [];
+    if (aspectAbs !== 0 && BODY_BY_KEY[promissorKey]) {
       const promissorAspectPlane = computeAspectPlane(BODY_BY_KEY[promissorKey], date, state.observer, SPHERE_RADIUS);
       if (layers.aspectPlane) skyGroup.add(buildAspectPlane(promissorAspectPlane, promissorKey, { radius: otherLineWidth }));
-      const aspectPoint = computeAspectPoint(promissorAspectPlane, aspectDeg);
-      promissorPoint = { key: `${promissorKey} ${ASPECT_GLYPHS[aspectSelect.value]}`, ra: aspectPoint.ra, dec: aspectPoint.dec };
+      const signs = aspectAbs === 180 ? [1] : [1, -1]; // the opposition's two points coincide
+      for (const sign of signs) {
+        const aspectPoint = computeAspectPoint(promissorAspectPlane, aspectAbs * sign);
+        candidates.push({
+          key: `${promissorKey} ${ASPECT_GLYPHS[aspectSelect.value]}${sign < 0 ? ' (dex)' : ''}`,
+          ra: aspectPoint.ra, dec: aspectPoint.dec,
+        });
+      }
+    } else {
+      candidates.push(promissorPoint);
     }
-
-    const isSelfReturn = promissorKey === significatorKey;
-    direction = computeRegiomontanusDirection(
-      promissorPoint, resolveDirectionPoint(significatorKey, state),
-      date, state.observer, { mc: state.mc }, SPHERE_RADIUS, { selfReturn: isSelfReturn },
-    );
+    for (const candidate of candidates) {
+      const d = computeRegiomontanusDirection(candidate, significatorPoint, date, state.observer, { mc: state.mc }, SPHERE_RADIUS);
+      if (!direction || d.arcYears < direction.arcYears) direction = d;
+    }
     const { group, markerMesh, markerMaterial, label, traveledLine, remainingLine, boundLabel } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);
     group.visible = layers.direction;
     skyGroup.add(group);
@@ -1430,7 +1446,6 @@ directionPanel.hidden = !primaryDirectionsToggle.checked; // sync initial state 
 syncPrimaryDirectionsLayerRows();
 const promissorSelect = document.getElementById('promissor-select');
 const aspectSelect = document.getElementById('aspect-select');
-const aspectDirectionSelect = document.getElementById('aspect-direction-select');
 const playBtn = document.getElementById('dir-play');
 const resetBtn = document.getElementById('dir-reset');
 const endBtn = document.getElementById('dir-end');
@@ -1441,7 +1456,7 @@ const slider = document.getElementById('dir-slider');
 const readout = document.getElementById('direction-readout');
 const boundCrossingsEl = document.getElementById('bound-crossings');
 
-[promissorSelect, aspectSelect, aspectDirectionSelect].forEach(el => el.addEventListener('change', rebuild));
+[promissorSelect, aspectSelect].forEach(el => el.addEventListener('change', rebuild));
 
 playBtn.addEventListener('click', () => {
   if (!direction) return;
@@ -1485,7 +1500,7 @@ function tourIntroText() {
   const proName = pointLabel(promissorSelect.value);
   const sigName = pointLabel(significatorSelect.value);
   const aspectGlyph = ASPECT_GLYPHS[Math.abs(parseFloat(aspectSelect.value))] ?? '☌';
-  return `${proName} is directed to ${sigName} (${aspectGlyph}). The promissor sweeps forward along the celestial equator — 1° of arc per year (the Naibod key) — until it reaches this aspect. Watch it travel; the camera follows automatically.`;
+  return `${proName} is directed to ${sigName} (${aspectGlyph}). The promissor is carried along the celestial equator by primary motion — one year of life per 0°59′08″ of arc (Naibod's key) — until it reaches this aspect. Watch it travel; the camera follows automatically.`;
 }
 
 function startGuidedTour() {
