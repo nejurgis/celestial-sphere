@@ -426,10 +426,6 @@
 
       <div id="direction-panel">
         <div class="row1">
-          <select id="system-select" title="Regiomontanus: circle-of-position poles + oblique ascension. Placidus: semi-arc (mundo fraction of the diurnal/nocturnal semicircle) — MC/IC directions match Regiomontanus, ASC/DSC directions can diverge by years.">
-            <option value="regiomontanus" selected>Regiomontanus</option>
-            <option value="placidus">Placidus</option>
-          </select>
           <span>Direct</span>
           <select id="promissor-select">
             <option value="">— off —</option>
@@ -517,10 +513,6 @@
           <label>Min age <input id="table-min-years" type="number" value="0" min="0" max="1000" step="10"> yrs</label>
           <label>Max age <input id="table-max-years" type="number" value="150" min="1" max="1000" step="10"> yrs</label>
           <label><input id="table-bounds" type="checkbox" checked> Bound changes</label>
-          <select id="table-system" title="Regiomontanus: circle-of-position poles + oblique ascension. Placidus: semi-arc — ASC/DSC directions can diverge by years.">
-            <option value="regiomontanus" selected>Regiomontanus</option>
-            <option value="placidus">Placidus</option>
-          </select>
           <button id="table-recompute-btn" type="button">Recompute</button>
           <span id="table-status" class="muted"></span>
           <button id="table-close-btn" type="button" class="ghost-btn">✕</button>

@@ -13,10 +13,6 @@
 //    02:40 +01:00): six dated directions incl. to the 5th-house cusp, + cusps.
 //    A significator 'C<n>' means house cusp n directed as its zodiac degree
 //    (ecliptic latitude 0).
-//  * alexeyborealis.com/blog/placidus-direction (Churchill, 1874-11-30 01:30 UTC,
-//    1°21′W 51°51′N): the author's worked PLACIDUS example — Sun → Mercury,
-//    mundane position of Mercury 233°42′, arc 24°25′, September 1899.
-//    A chart with `system: 'placidus'` is run through the Placidus mode.
 //
 // Row: [promissor, aspect glyph, sinister|dexter, significator, ...book month per time]
 // (sinister = +offset in longitude, dexter = −offset). A trailing { xfail: 'why' }
@@ -31,17 +27,6 @@ const TOLERANCE_MONTHS = 3;
 const CUSP_TOLERANCE_DEG = 0.03; // 2′
 
 const DATASET = [
-  {
-    name: 'Churchill (blog, Placidus worked example)',
-    system: 'placidus',
-    lat: 51 + 51 / 60, lon: -(1 + 21 / 60),
-    times: [{ label: '01:30 UT', utc: [1874, 11, 30, 1, 30] }],
-    mundane: { Mercury: 233 + 42 / 60 }, // Placidus mundane position (RA, deg) of the significator
-    arcs: { 'Sun ☌ → Mercury': 24 + 25 / 60 }, // published arc, degrees
-    rows: [
-      ['Sun', '☌', null, 'Mercury', '1899-09'],
-    ],
-  },
   {
     name: 'Queen Elizabeth II (blog)',
     lat: 51.5, lon: -9 / 60,
@@ -116,7 +101,7 @@ for (const chart of DATASET) {
     const cuspPoint = k => { const e = A.eclipticPointToEquatorial(cuspsAll[k.slice(1)], 0, date); return { key: k, ra: e.ra, dec: e.dec }; };
     const resolve = k => /^C\d+$/.test(k) ? cuspPoint(k) : BODY[k] ? { key: k, body: BODY[k] } : { key: k, ra: ang[k].ra, dec: ang[k].dec };
     const keys = [...KEYS, ...new Set(chart.rows.flatMap(r => [r[0], r[3]]).filter(k => /^C\d+$/.test(k)))];
-    const rows = A.computeAllDirections(keys, resolve, k => BODY[k], date, s.observer, 1, 120, { includeBoundCrossings: false, angles, system: chart.system ?? 'regiomontanus' });
+    const rows = A.computeAllDirections(keys, resolve, k => BODY[k], date, s.observer, 1, 120, { includeBoundCrossings: false, angles });
     console.log(`\n${chart.name} — ${t.label}  (ASC ${A.formatEclipticDegree(s.asc.deg)}, MC ${A.formatEclipticDegree(s.mc.deg)})`);
 
     if (chart.cusps) {
@@ -129,14 +114,6 @@ for (const chart of DATASET) {
       }
     }
 
-    for (const [planet, want] of Object.entries(chart.mundane ?? {})) {
-      const p = s.planets.find(x => x.key === planet);
-      const eq = A.eclipticPointToEquatorial(p.elon, p.elat, date);
-      const mp = A.placidusMundanePosition(eq.ra * 15, eq.dec, s.mc.ra * 15, chart.lat);
-      const ok = Math.abs(mp - want) <= 0.03;
-      if (!ok) worst = Infinity;
-      console.log(`  Placidus mundane position of ${planet}: book ${want.toFixed(3)}°  app ${mp.toFixed(3)}°  ${ok ? 'ok' : 'FAIL'}`);
-    }
     console.log('  promissor → significator   book     app         arc      Δ months');
     for (const row of chart.rows) {
       const [p, glyph, dir, sig] = row, book = row[4 + ti];
@@ -148,9 +125,7 @@ for (const chart of DATASET) {
       const [by, bm] = book.split('-').map(Number);
       const dMonths = (r.date.getUTCFullYear() - by) * 12 + (r.date.getUTCMonth() + 1 - bm);
       if (!opts?.xfail) worst = Math.max(worst, Math.abs(dMonths));
-      const arcKey = `${p} ${glyph} → ${sig}`, wantArc = chart.arcs?.[arcKey];
-      let arcNote = '';
-      if (wantArc != null) { const okArc = Math.abs(r.arcDeg - wantArc) <= 0.05; if (!okArc) worst = Infinity; arcNote = `   arc book ${wantArc.toFixed(3)}° ${okArc ? 'ok' : 'FAIL'}`; }
+      const arcNote = '';
       console.log(`  ${label} ${book}  ${r.date.toISOString().slice(0, 7)}  ${r.arcDeg.toFixed(2).padStart(6)}° ${r.swapped ? 'conv' : 'dir '}  ${dMonths > 0 ? '+' : ''}${dMonths}${arcNote}${opts?.xfail ? `   [known miss: ${opts.xfail}]` : ''}`);
     }
   });

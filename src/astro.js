@@ -527,11 +527,7 @@ export function computeRegiomontanusDirection(promissor, significator, natalDate
   return buildDirectionResult(moving, fixed, movingEq, swapped ? converse : direct, swapped, natalDate, observer, radius, dirOpts);
 }
 
-// ── Placidus semi-arc helpers (drawing / house construction) ───────────────
-// The helpers below (semiArcsOf, hourAngleDeg, placidusQuadrantAngle,
-// placidusUnwrappedAngle, placidusArcDeg) predate the direction code and are
-// still used by the Placidus house construction. computePlacidusDirection no
-// longer uses them; it uses placidusMundanePosition below.
+// ── Placidus semi-arc helpers (used by the Placidus house construction) ───
 function semiArcsOf(decDeg, latDeg) {
   const x = Math.max(-1, Math.min(1, -Math.tan((latDeg * Math.PI) / 180) * Math.tan((decDeg * Math.PI) / 180)));
   const diurnal = (Math.acos(x) * 180) / Math.PI;
@@ -580,75 +576,6 @@ function placidusArcDeg(hourAngle0, sDiurnal, targetH, targetSDiurnal) {
   return hi;
 }
 
-
-// ── Primary directions (Placidus, in mundo) ────────────────────────────────
-// Same skeleton as the Regiomontanus system above; only the significator's
-// "mundane position" differs. Placidus's mundane position (source text,
-// "Mundane Position in the Placidus System") is where the point's semi-arc
-// proportion, projected on the equator, lands:
-//     R      = MD / SA           (meridian distance ÷ diurnal or nocturnal
-//                                  semi-arc — upper meridian & diurnal above
-//                                  the horizon, lower & nocturnal below)
-//     RA_M   = RAMC(or IC) ± 90° · R
-//     SA_diurnal = 90° + AD,  SA_nocturnal = 90° − AD,  AD = asin(tan φ tan δ)
-// Two points are "conjunct in mundo" when their mundane positions coincide.
-//   direct   — promissor carried west along its parallel until ITS mundane
-//              position equals the significator's;
-//   converse — the reverse (significator carried onto the promissor's).
-// Checked against the source's worked example (Churchill, Sun → Mercury:
-// mundane position 233°42′, arc 24°25′).
-export function placidusMundanePosition(raDeg, decDeg, ramcDeg, latDeg) {
-  const r = Math.PI / 180;
-  const x = Math.max(-1, Math.min(1, Math.tan(latDeg * r) * Math.tan(decDeg * r)));
-  const ad = (Math.asin(x) * 180) / Math.PI;
-  const signed = a => ((a % 360) + 540) % 360 - 180; // (-180,180]
-  const hourAngle = signed(ramcDeg - raDeg);
-  const upper = Math.abs(hourAngle) <= 90 + ad;
-  const ref = upper ? ramcDeg : ramcDeg + 180;
-  const semiArc = upper ? 90 + ad : 90 - ad;
-  const md = signed(raDeg - ref);
-  const ratio = semiArc > 1e-9 ? Math.min(1, Math.abs(md) / semiArc) : 0;
-  return (((ref + Math.sign(md) * 90 * ratio) % 360) + 360) % 360;
-}
-
-// Arc (deg, >=0) the point at (raDeg, decDeg) must be carried westward (hour
-// angle increasing) for its mundane position to reach targetMP (deg RA).
-function placidusArcToMP(raDeg, decDeg, targetMP, ramcDeg, latDeg) {
-  const r = Math.PI / 180;
-  const x = Math.max(-1, Math.min(1, Math.tan(latDeg * r) * Math.tan(decDeg * r)));
-  const ad = (Math.asin(x) * 180) / Math.PI;
-  const saU = 90 + ad, saL = 90 - ad;
-  const signed = a => ((a % 360) + 540) % 360 - 180;
-  const H0 = signed(ramcDeg - raDeg);
-  // Target in mundane space measured from the MC: 0 = MC, ±90 = horizon, ±180 = IC.
-  const X = signed(targetMP - ramcDeg);
-  const ax = Math.abs(X);
-  // Invert the piecewise-linear mundane mapping with THIS point's own semi-arcs.
-  // Mundane RA offset from the MC is minus the hour angle, hence the leading minus.
-  const Ht = -Math.sign(X) * (ax <= 90 ? (ax / 90) * saU : saU + ((ax - 90) / 90) * saL);
-  return (((Ht - H0) % 360) + 360) % 360;
-}
-
-// angles: { mc } (only mc.ra — RAMC — is needed).
-export function computePlacidusDirection(promissor, significator, natalDate, observer, angles, radius = 1, opts = {}) {
-  const pEq = resolveEquatorial(promissor, natalDate, observer);
-  const sEq = resolveEquatorial(significator, natalDate, observer);
-  const ramc = angles.mc.ra * 15, lat = observer.latitude;
-  const dirOpts = { ...opts, raSign: -1 };
-
-  const isSelfReturn = opts.selfReturn && promissor.key === significator.key;
-  if (isSelfReturn) return buildDirectionResult(promissor, significator, pEq, 360, false, natalDate, observer, radius, dirOpts);
-
-  const mpP = placidusMundanePosition(pEq.ra * 15, pEq.dec, ramc, lat);
-  const mpS = placidusMundanePosition(sEq.ra * 15, sEq.dec, ramc, lat);
-  const direct = placidusArcToMP(pEq.ra * 15, pEq.dec, mpS, ramc, lat);
-  const converse = placidusArcToMP(sEq.ra * 15, sEq.dec, mpP, ramc, lat);
-  const swapped = direct > 180; // same rule as the Regiomontanus system (source, p.378)
-  const moving = swapped ? significator : promissor;
-  const fixed = swapped ? promissor : significator;
-  const movingEq = swapped ? sEq : pEq;
-  return buildDirectionResult(moving, fixed, movingEq, swapped ? converse : direct, swapped, natalDate, observer, radius, dirOpts);
-}
 
 // Every Egyptian-bound change the moving point passes through over the
 // course of a direction — a change of dignity mid-direction is itself
@@ -896,17 +823,7 @@ const norm3 = v => { const n = Math.hypot(...v) || 1; return [v[0] / n, v[1] / n
 // years long, which put its whole aspect plane in the wrong place.
 const NODE_SEARCH_DAYS = { Mercury: 250, Venus: 400, Mars: 900, Jupiter: 2500, Saturn: 6000 };
 
-// mode: 'inclination' — plane through the planet whose inclination to the
-// ecliptic equals the planet's maximum latitude in the current swing (the
-// planet's "maximum elevation"); 'two-point' — the great circle through the
-// planet and the point where that maximum occurs. The two differ whenever the
-// planet is not ~90° of longitude from its max-elevation point.
-// 'inclination' picks the mirror plane by where the maximum really falls in
-// longitude; 'morin-k' by whether the planet is approaching/leaving the maximum
-// in TIME (Morin's k = ±1) — identical unless the planet is retrograde.
-export const ASPECT_PLANE_MODE = { value: 'inclination' };
 export function computeAspectPlane(body, date, observer, radius = 1, searchWindowDays = NODE_SEARCH_DAYS[body] ?? 250, steps = 120) {
-  const mode = ASPECT_PLANE_MODE.value;
   const nowEcl = eclipticOf(body, date);
   const P0 = eclipticToCartesian(nowEcl.elon, nowEcl.elat);
   const sampleElat = d => eclipticOf(body, new Date(date.getTime() + d * 86400000)).elat;
@@ -945,75 +862,47 @@ export function computeAspectPlane(body, date, observer, radius = 1, searchWindo
   const inclinationDeg = maxAbsLat;
   const iRad = (inclinationDeg * Math.PI) / 180;
 
-  // Morinus's circle of aspects: the great circle through the planet's
-  // CURRENT position and its point of maximum elevation above the ecliptic
-  // on the path from the previous node to the next one. Two points fix the
-  // circle: N = P0 × Pmax. (An inclination-only construction — plane through
-  // P0 tilted by the max latitude — is only equal when P0 and Pmax happen to
-  // line up; it drifted a whole year on one trine.) When the planet IS at
-  // (or negligibly near) its max elevation, or has ~zero latitude like the
-  // Sun, the two points don't define a circle and the inclination-based
-  // solve below is used instead.
-  let N;
+  // Morin's circle of aspects: the plane through the planet's current position
+  // whose inclination to the ecliptic equals the planet's maximum latitude in
+  // the current swing (previous node -> next node). Two mirror-image planes
+  // have that inclination through P0 (planet on the ascending or descending
+  // side); the right one is the one whose own highest point falls where the
+  // planet really reached its maximum. (A motion-direction test would be
+  // meaningless for a planet at a station, as Saturn is at one test chart.)
   const maxEcl = eclipticOf(body, new Date(date.getTime() + maxDay * 86400000));
-  const Pmax = eclipticToCartesian(maxEcl.elon, maxEcl.elat);
-  const crossPP = cross3(P0, Pmax);
-  if (mode === 'two-point' && maxDay !== 0 && Math.hypot(...crossPP) > 1e-3 && inclinationDeg > 1e-3) {
-    N = norm3(crossPP);
-    // Orient N so that increasing phi (u->v) runs toward INCREASING ecliptic
-    // longitude at P0 — computeAspectPoint's sinister/dexter sign depends on it.
-    const east = norm3(cross3(Z_AXIS, P0));
-    if (dot3(cross3(N, P0), east) < 0) N = N.map(x => -x);
+  const Zperp = sub3(Z_AXIS, scale3(P0, dot3(Z_AXIS, P0)));
+  const sinGamma = Math.hypot(...Zperp) || 1e-9; // |component of Z perpendicular to P0|
+  const e1 = norm3(Zperp);
+  const e2 = norm3(cross3(P0, e1));
+  const cosTheta = Math.max(-1, Math.min(1, Math.cos(iRad) / sinGamma));
+  const theta0 = Math.acos(cosTheta);
+  const buildN = theta => norm3([
+    Math.cos(theta) * e1[0] + Math.sin(theta) * e2[0],
+    Math.cos(theta) * e1[1] + Math.sin(theta) * e2[1],
+    Math.cos(theta) * e1[2] + Math.sin(theta) * e2[2],
+  ]);
+  const Na = buildN(theta0);
+  const Nb = buildN(-theta0);
+  const peakElon = M => {
+    const zp = sub3(Z_AXIS, scale3(M, dot3(Z_AXIS, M))); // in-plane direction of steepest ascent
+    return cartesianToEcliptic(scale3(norm3(zp), Math.sign(maxEcl.elat) || 1)).elon;
+  };
+  const angDiff = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+  let N;
+  if (maxDay !== 0) {
+    N = angDiff(peakElon(Na), maxEcl.elon) <= angDiff(peakElon(Nb), maxEcl.elon) ? Na : Nb;
   } else {
-    // Solve for the plane's normal N: angle(N,Z)=i, N ⊥ P0.
-    const Zperp = sub3(Z_AXIS, scale3(P0, dot3(Z_AXIS, P0)));
-    const sinGamma = Math.hypot(...Zperp) || 1e-9; // |component of Z perpendicular to P0|
-    const e1 = norm3(Zperp);
-    const e2 = norm3(cross3(P0, e1));
-    const cosTheta = Math.max(-1, Math.min(1, Math.cos(iRad) / sinGamma));
-    const theta0 = Math.acos(cosTheta);
-    const buildN = theta => norm3([
-      Math.cos(theta) * e1[0] + Math.sin(theta) * e2[0],
-      Math.cos(theta) * e1[1] + Math.sin(theta) * e2[1],
-      Math.cos(theta) * e1[2] + Math.sin(theta) * e2[2],
-    ]);
-    const Na = buildN(theta0);
-    const Nb = buildN(-theta0);
-    // Two mirror-image planes have that inclination through P0 (the planet
-    // could be on the ascending or the descending side of the plane).
-    // Disambiguate by WHERE the plane's own highest point falls: it must be
-    // where the planet actually reached its maximum elevation (Pmax). This
-    // replaces a test on the planet's instantaneous motion direction, which
-    // is meaningless for a planet at its station (Saturn at the book's chart
-    // moves 0.003°/day) and sent Saturn's plane to the wrong solution.
-    const peakElon = M => {
-      const zp = sub3(Z_AXIS, scale3(M, dot3(Z_AXIS, M))); // in-plane direction of steepest ascent
-      const peak = scale3(norm3(zp), Math.sign(maxEcl.elat) || 1);
-      return cartesianToEcliptic(peak).elon;
-    };
-    const angDiff = (a, b) => { const d = Math.abs(((a - b) % 360 + 540) % 360 - 180); return d; };
-    if (maxDay !== 0 && mode === 'morin-k') {
-      // Morin's rule (as written by the source author): k = +1 if the planet
-      // is moving TOWARD its maximum latitude in time, -1 if away; the plane's
-      // peak then lies at higher longitude than the planet for k = +1, lower
-      // for k = -1 — regardless of where the maximum really falls in
-      // longitude (they differ for a retrograde planet).
-      const k = Math.sign(maxDay);
-      const side = M => Math.sign(((peakElon(M) - nowEcl.elon + 540) % 360) - 180);
-      N = side(Na) === k ? Na : Nb;
-    } else if (maxDay !== 0) {
-      N = angDiff(peakElon(Na), maxEcl.elon) <= angDiff(peakElon(Nb), maxEcl.elon) ? Na : Nb;
-    } else {
-      // Planet is AT its maximum: fall back to its real motion direction.
-      const laterEcl = eclipticOf(body, new Date(date.getTime() + 6 * 3600000));
-      const P1 = eclipticToCartesian(laterEcl.elon, laterEcl.elat);
-      const realDir = norm3(sub3(P1, P0));
-      const score = M => Math.abs(dot3(norm3(cross3(M, P0)), realDir));
-      N = score(Na) >= score(Nb) ? Na : Nb;
-    }
-    const east = norm3(cross3(Z_AXIS, P0));
-    if (dot3(cross3(N, P0), east) < 0) N = N.map(x => -x);
+    // Planet is AT its maximum: fall back to its real motion direction.
+    const laterEcl = eclipticOf(body, new Date(date.getTime() + 6 * 3600000));
+    const P1 = eclipticToCartesian(laterEcl.elon, laterEcl.elat);
+    const realDir = norm3(sub3(P1, P0));
+    const score = M => Math.abs(dot3(norm3(cross3(M, P0)), realDir));
+    N = score(Na) >= score(Nb) ? Na : Nb;
   }
+  // Orient N so increasing phase runs toward INCREASING ecliptic longitude at
+  // P0 — computeAspectPoint's sinister(+)/dexter(-) sign depends on it.
+  const east = norm3(cross3(Z_AXIS, P0));
+  if (dot3(cross3(N, P0), east) < 0) N = N.map(x => -x);
 
   // Sample the circle: any two orthonormal vectors spanning the plane ⊥ N.
   const ref = Math.abs(N[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
@@ -1381,10 +1270,7 @@ export const ASPECT_DEFS = [
 // "which of my houses is being activated" reading transits use.
 export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate, observer, radius = 1, maxYears = 150, opts = {}) {
   const includeBoundCrossings = opts.includeBoundCrossings ?? true;
-  const system = opts.system ?? 'regiomontanus'; // or 'placidus'
-  const direct = (p, s, o) => system === 'placidus'
-    ? computePlacidusDirection(p, s, natalDate, observer, opts.angles, radius, o)
-    : computeRegiomontanusDirection(p, s, natalDate, observer, opts.angles, radius, o);
+  const direct = (p, s, o) => computeRegiomontanusDirection(p, s, natalDate, observer, opts.angles, radius, o);
   const rows = [];
   for (const promissorKey of pointKeys) {
     const body = bodyOf(promissorKey);

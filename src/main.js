@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeZodiacBand,
   computeAspectPlane, computeAspectPoint, computeAllDirections, computeRegiomontanusHouses,
-  computeBoundCrossings, computePlacidusDirection, computeRegiomontanusDirection, boundOf, planetMotion,
+  computeBoundCrossings, computeRegiomontanusDirection, boundOf, planetMotion,
   computeSkyRotationBasis, computeStarField, ZODIAC_SIGNS,
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
   formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
@@ -1041,15 +1041,10 @@ function rebuild() {
     }
 
     const isSelfReturn = promissorKey === significatorKey;
-    direction = systemSelect.value === 'placidus' && !isSelfReturn
-      ? computePlacidusDirection(
-          promissorPoint, resolveDirectionPoint(significatorKey, state),
-          date, state.observer, { mc: state.mc }, SPHERE_RADIUS,
-        )
-      : computeRegiomontanusDirection(
-          promissorPoint, resolveDirectionPoint(significatorKey, state),
-          date, state.observer, { mc: state.mc }, SPHERE_RADIUS, { selfReturn: isSelfReturn },
-        );
+    direction = computeRegiomontanusDirection(
+      promissorPoint, resolveDirectionPoint(significatorKey, state),
+      date, state.observer, { mc: state.mc }, SPHERE_RADIUS, { selfReturn: isSelfReturn },
+    );
     const { group, markerMesh, markerMaterial, label, traveledLine, remainingLine, boundLabel } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);
     group.visible = layers.direction;
     skyGroup.add(group);
@@ -1433,7 +1428,6 @@ primaryDirectionsToggle.addEventListener('change', () => {
 });
 directionPanel.hidden = !primaryDirectionsToggle.checked; // sync initial state (checkbox starts checked, so this is a no-op today, but keeps the two in sync if the default ever changes)
 syncPrimaryDirectionsLayerRows();
-const systemSelect = document.getElementById('system-select');
 const promissorSelect = document.getElementById('promissor-select');
 const aspectSelect = document.getElementById('aspect-select');
 const aspectDirectionSelect = document.getElementById('aspect-direction-select');
@@ -1447,7 +1441,7 @@ const slider = document.getElementById('dir-slider');
 const readout = document.getElementById('direction-readout');
 const boundCrossingsEl = document.getElementById('bound-crossings');
 
-[systemSelect, promissorSelect, aspectSelect, aspectDirectionSelect].forEach(el => el.addEventListener('change', rebuild));
+[promissorSelect, aspectSelect, aspectDirectionSelect].forEach(el => el.addEventListener('change', rebuild));
 
 playBtn.addEventListener('click', () => {
   if (!direction) return;
@@ -1808,7 +1802,6 @@ const tablePanel = document.getElementById('table-panel');
 const tableMinYears = document.getElementById('table-min-years');
 const tableMaxYears = document.getElementById('table-max-years');
 const tableBoundsCheckbox = document.getElementById('table-bounds');
-const tableSystemSelect = document.getElementById('table-system');
 const tableRecomputeBtn = document.getElementById('table-recompute-btn');
 const tableCloseBtn = document.getElementById('table-close-btn');
 const tableStatus = document.getElementById('table-status');
@@ -1828,7 +1821,6 @@ function computeTable() {
     {
       includeBoundCrossings: tableBoundsCheckbox.checked,
       angles: { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc },
-      system: tableSystemSelect.value,
     },
   ).filter(r => r.arcYears >= minYears);
   const ms = (performance.now() - t0).toFixed(0);
@@ -1911,7 +1903,6 @@ tableRecomputeBtn.addEventListener('click', computeTable);
 tableMaxYears.addEventListener('change', computeTable);
 tableMinYears.addEventListener('change', computeTable);
 tableBoundsCheckbox.addEventListener('change', computeTable);
-tableSystemSelect.addEventListener('change', computeTable);
 
 // ── 2D chart wheel ────────────────────────────────────────────────────────
 
