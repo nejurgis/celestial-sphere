@@ -13,6 +13,8 @@
 //    02:40 +01:00): six dated directions incl. to the 5th-house cusp, + cusps.
 //    A significator 'C<n>' means house cusp n directed as its zodiac degree
 //    (ecliptic latitude 0).
+//  * Morin, Astrologia Gallica Book 22 (Holden's translation), Appendix 5: the
+//    worked Regiomontanus example is checked at the end.
 //
 // Row: [promissor, aspect glyph, sinister|dexter, significator, ...book month per time]
 // (sinister = +offset in longitude, dexter = −offset). A trailing { xfail: 'why' }
@@ -130,5 +132,21 @@ for (const chart of DATASET) {
     }
   });
 }
+// ── Morin/Holden worked example (Astrologia Gallica Book 22, Appendix 5) ──────
+// Direction of Mars to the conjunction of Jupiter in mundo, chart of Sixtus ab
+// Hemminga: RAMC 165°24′, latitude 53°N. Published: pole 47°21′, arc 25°46′
+// (Morin himself printed 26°45′ — a slip Holden traces to a mis-copied degree).
+{
+  const dm = (d, m) => d + m / 60;
+  const RAMC = dm(165, 24);
+  const jup = { ra: dm(263, 14), dec: -dm(22, 53) }, mars = { ra: dm(288, 37), dec: -dm(23, 9) };
+  const d = A.computeRegiomontanusDirection(
+    { key: 'Mars', ra: mars.ra / 15, dec: mars.dec }, { key: 'Jupiter', ra: jup.ra / 15, dec: jup.dec },
+    new Date(0), { latitude: 53 }, { mc: { ra: RAMC / 15 } }, 1, { skipSweep: true });
+  const want = dm(25, 46), ok = !d.swapped && Math.abs(d.arcDeg - want) <= 0.02;
+  if (!ok) worst = Infinity;
+  console.log(`\nMorin/Holden Appendix 5 example (Mars → Jupiter, mundane): book ${want.toFixed(3)}°  app ${d.arcDeg.toFixed(3)}° ${d.swapped ? 'conv' : 'dir'}  ${ok ? 'ok' : 'FAIL'}`);
+}
+
 console.log(`\nworst deviation (excluding known misses): ${worst} month(s) (tolerance ${TOLERANCE_MONTHS})`);
 process.exit(worst > TOLERANCE_MONTHS ? 1 : 0);

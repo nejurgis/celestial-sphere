@@ -230,3 +230,64 @@ give worse answers. Their formulas and measured effects are recorded in §7–§
 **What we did not "fix".** The two blog rows that don't reproduce (§6) were left
 alone: no tested variant improves them without breaking rows that do match, so we
 would be fitting noise. They are marked as known misses in the verification script.
+
+## 10. Morin's own text (Astrologia Gallica Book 22, Holden's translation)
+
+Read after the method was built; it confirms it rather than changing it. Page
+numbers are the translation's. The PDF is in the user's library, not the repo.
+
+**Confirmed.**
+- **The arc.** Appendix 5 (pp.151–153, Holden's Regiomontanus formulae): pole of
+  Point 1's circle of position, oblique ascension of both points under that pole,
+  `Arc = OA2 − OA1`; latitude included ("mundane", Morin's preference) or not
+  ("zodiacal"); western-half points via `OD = RA + AD`; MC → `Arc = RA2 − RAMC`;
+  ASC → `OA2 − RAMC − 90°`; an intermediate cusp = its longitude at latitude 0.
+  Its worked example (Mars → Jupiter, Hemminga chart, RAMC 165°24′, φ 53°N) gives
+  pole 47°21′ and arc 25°46′; the app reproduces every intermediate value and the
+  arc (25.768°) — now a hard check in `verify-directions.mjs`. The equations there
+  (`G, H, A, P, CP`) are the same pole as `tan p = tan φ·|sin A|`.
+- **One rule, not two** (Section I ch.7, pp.14–17): "the following terminus, by
+  the motion of the primum mobile, is carried to the circle of position of the
+  preceding terminus", ascensions taken under the *preceding* terminus's pole. That
+  is our direct / converse pair: the point that stays put supplies the pole. Morin
+  says direct and converse of the same pair are one concourse with one effect, so a
+  single row per pair is right.
+- **Aspect plane** (Section II ch.2–3, pp.32–35; Book 16 ch.9, Appendix 2,
+  pp.127–130): the circle of aspects is inclined to the ecliptic by "the maximum
+  latitude the planet can attain in the northern or southern part in which it is
+  situated"; the planet's distance from the node follows from
+  `tan(max lat) : tan(lat) = 1 : sin(arc)`; sinister aspects are counted 30°/60°/
+  90°… along the circle from there, **dexter aspects are the antipodes of the
+  sinister ones with latitude reversed**. Bianchini's instantaneous-latitude
+  circle is explicitly rejected (the planet would run toward the ecliptic on it
+  while actually moving away). All as implemented in §3.
+- **Naibod** (Section III ch.3, pp.56–58): 59′08″ per year (1° ≈ 1 y 5 d 8 h),
+  preferred to Ptolemy's 1°/y, Tycho's true daily solar RA motion ("deviates too
+  much … after the 30th year", 54′–67′) and Kepler's true daily solar motion.
+- **Regiomontanus, not Placidus** (Holden's preface p.xii; ch.8 example, pp.25–26):
+  Morin used Regiomontanus houses and directions; his example compares his
+  66°52′ with the Ptolemaic/Placidian proportional-semi-arc result 64°07′ and calls
+  the difference a difference of method.
+
+**Two useful cautions from the text.**
+- The node position is extremely sensitive to the latitudes used (Holden's note to
+  the Venus example: 1′ of latitude moves the arc-from-node by 43′). Aspect points
+  of a planet near a node are therefore only as good as its ephemeris latitude —
+  this is where small residuals against published dates are most likely to hide.
+- Morin often notes that the direction *without* latitude usually differs in time
+  from the one with; he treats both as possibly acting, but trusts the one with
+  latitude more. The calculator is mundane only.
+
+**Antiscia — defined, checked, not yet in the calculator.** Section II ch.5 (p.45):
+antiscia are efficacious promittors (never significators); a planet with latitude
+has **two**, the ecliptic points (latitude 0) at the planet's own declination
+(`sin L = sin δ / sin ε`, and `180° − L`). Test on the textbook's Hitler example
+(1889-04-20 18:30 LMT Braunau, 48°16′N 13°02′E → 17:38 UT): Venus δ = 22.906°, its
+antiscia are at 17°57′ Gemini and 12°03′ Cancer, and the first directed to Saturn
+gives 55.68° → **Oct 1945** (textbook: "September 1945", though it places that
+point at 11° Gemini, which does not match the declination rule — likely a typo).
+Adding them as promissors would be small; left out to keep the table basic.
+
+**Still unexplained.** Nothing in Morin's text bears on the two blog rows in §6
+(Mercury ☌ Mars for Diana; Saturn ☍ → IC for William): he has no special rule for
+the IC, and his single-rule statement gives our value for William's row.
