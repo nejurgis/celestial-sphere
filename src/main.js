@@ -1231,30 +1231,34 @@ const dateInput = document.getElementById('date-input');
 const latInput = document.getElementById('lat-input');
 const lonInput = document.getElementById('lon-input');
 
-// Coordinate fields are text: "54° 24.6′ N". Typing accepts decimals (comma or
-// dot), "54 24.6", "54°24′36″" and N/S/E/W. The exact value is kept beside the
+// Coordinate fields are text in the usual astrology-software notation:
+// 54°N41' / 25°E19' (degrees, hemisphere, whole arc-minutes). Typing accepts
+// decimals (comma or dot), "54 41", "54°41'36"" and N/S/E/W. The frame ° H '
+// is fixed: edits only touch the digits. The exact value is kept beside the
 // text so reformatting never rounds it.
 function formatCoord(value, pos, neg) {
-  let d = Math.floor(Math.abs(value)), m = Math.round((Math.abs(value) - d) * 600) / 10;
+  let d = Math.floor(Math.abs(value)), m = Math.round((Math.abs(value) - d) * 60);
   if (m >= 60) { m = 0; d += 1; }
-  return `${d}° ${m.toFixed(1)}′ ${value < 0 ? neg : pos}`;
+  return `${d}°${value < 0 ? neg : pos}${String(m).padStart(2, '0')}'`;
 }
 function parseCoord(text, pos, neg) {
-  const t = text.trim().toUpperCase().replace(',', '.').replace(/(\d),(\d)/g, '$1.$2');
+  const t = text.trim().toUpperCase().replace(/(\d),(\d)/g, '$1.$2');
   const letters = t.match(/[NSEW]/g) || [];
   if (letters.length > 1 || (letters.length && letters[0] !== pos && letters[0] !== neg)) return NaN;
   const nums = (t.replace(/[NSEW]/g, ' ').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
   if (!nums.length || nums.length > 3) return NaN;
-  const neg0 = nums[0] < 0 || /^-/.test(t.replace(/^\s*[NSEW]\s*/, ''));
+  const negative = nums[0] < 0 || /^\s*-/.test(t);
   const v = Math.abs(nums[0]) + (nums[1] || 0) / 60 + (nums[2] || 0) / 3600;
-  return (letters[0] === neg || neg0) ? -v : v;
+  return (letters[0] === neg || negative) ? -v : v;
 }
 function coordField(input, pos, neg, limit) {
+  const maxDeg = limit === 90 ? 2 : 3;
+  const MASK = /^(\d*)°([NSEW])(\d*)'$/;
   const api = {
     get() {
       if (input.dataset.exact !== undefined && input.value === input.dataset.text) return Number(input.dataset.exact);
-      const mm = /^(\d*)° (\d*\.?\d*)′ ([NSEW])$/.exec(input.value);
-      const v = mm ? (Number(mm[1] || 0) + Number(mm[2] || 0) / 60) * (mm[3] === neg ? -1 : 1)
+      const mm = MASK.exec(input.value);
+      const v = mm ? (Number(mm[1] || 0) + Number(mm[3] || 0) / 60) * (mm[2] === neg ? -1 : 1)
         : parseCoord(input.value, pos, neg);
       return Math.abs(v) <= limit ? v : NaN;
     },
@@ -1263,25 +1267,18 @@ function coordField(input, pos, neg, limit) {
       input.value = input.dataset.text = formatCoord(v, pos, neg);
     },
   };
-  // The ° ′ and hemisphere letter are part of the field's frame: edits only
-  // ever touch the digits, so the symbols cannot be deleted or typed over.
-  const maxDeg = limit === 90 ? 2 : 3;
-  const MASK = /^(\d*)° (\d*\.?\d*)′ ([NSEW])$/;
   const setText = (t, caret) => {
     input.value = t;
     input.setSelectionRange(caret, caret);
   };
-  const seg = () => {
-    const t = input.value;
-    return { t, d: t.indexOf('°'), m: t.indexOf('′') };
-  };
   input.addEventListener('beforeinput', e => {
-    const { t, d, m } = seg();
+    const t = input.value;
     const mm = MASK.exec(t);
     if (!mm) return;
     e.preventDefault();
+    const d = t.indexOf('°'), h = d + 1;           // hemisphere letter sits at h
     let s = input.selectionStart, en = input.selectionEnd;
-    if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromDrop') {
+    if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromDrop' || (e.data && e.data.length > 1)) {
       const v = parseCoord((e.dataTransfer && e.dataTransfer.getData('text')) || e.data || '', pos, neg);
       if (!Number.isNaN(v) && Math.abs(v) <= limit) { api.set(v); input.dispatchEvent(new Event('change')); }
       return;
@@ -1289,32 +1286,32 @@ function coordField(input, pos, neg, limit) {
     if (e.inputType.startsWith('delete')) {
       const back = e.inputType.includes('Backward');
       if (s === en) { if (back) s = Math.max(0, s - 1); else en = Math.min(t.length, en + 1); }
-      // Symbols are skipped: the caret moves over them instead of deleting.
-      let out = '', caret = s, removed = false;
+      let out = '', removed = false;
       for (let i = 0; i < t.length; i++) {
-        const del = i >= s && i < en && /[\d.]/.test(t[i]);
-        if (del) removed = true; else out += t[i];
+        if (i >= s && i < en && /\d/.test(t[i])) removed = true; else out += t[i];
       }
-      if (!removed) { const hop = back ? s : en; setText(t, hop); return; }
-      const before = t.slice(0, s).replace(/[^\d.°′ ]/g, '');
-      setText(out, before.length ? Math.min(s, out.length) : s);
+      // Symbols are skipped: the caret moves over them instead of deleting.
+      if (!removed) { setText(t, back ? s : en); return; }
+      setText(out, s);
       return;
     }
     const ch = e.data;
     if (!ch) return;
     const up = ch.toUpperCase();
-    if (up === pos || up === neg) { setText(`${mm[1]}° ${mm[2]}′ ${up}`, t.length); return; }
-    if (/[\s°'′.,]/.test(ch) && !(s > d && (ch === '.' || ch === ',') && en <= m)) {
-      // separator: hop to the next segment
-      setText(t, s <= d ? d + 2 : t.length);
+    if (up === pos || up === neg) { setText(`${mm[1]}°${up}${mm[3]}'`, h + 1 + mm[3].length); return; }
+    if (/[\s°'′.,]/.test(ch)) {                     // separator: hop to the next part
+      setText(t, s <= d ? h + 1 : t.length - 1);
       return;
     }
-    if (!/[\d.,]/.test(ch)) return;
-    const c = ch === ',' ? '.' : ch;
-    const next = t.slice(0, s) + c + t.slice(en);
+    if (!/\d/.test(ch)) return;
+    const next = t.slice(0, s) + ch + t.slice(en);
     const nm = MASK.exec(next);
-    if (!nm || nm[1].length > maxDeg || (nm[2].match(/\./g) || []).length > 1) return;
-    setText(next, s + 1);
+    if (!nm || nm[1].length > maxDeg || nm[3].length > 2) return;
+    // Degrees complete (max digits, or no longer valid with another digit):
+    // the caret goes straight to the arc-minutes.
+    const inDeg = s <= d;
+    const degDone = inDeg && (nm[1].length >= maxDeg || Number(nm[1]) * 10 > limit);
+    setText(next, degDone ? nm[1].length + 2 : s + 1);
   });
   input.addEventListener('change', () => {
     const v = api.get();
