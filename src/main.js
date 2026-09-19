@@ -1097,15 +1097,18 @@ function renderChart2DPanel() {
   if (!lastState) return;
   const showHouses = chart2dHousesCheckbox.checked;
   const showBounds = chart2dBoundsCheckbox.checked;
-  const houses = showHouses
-    ? (chart2dHouseSystemSelect.value === 'whole-sign'
-        ? (lastState.asc ? computeWholeSignHouses(lastState.asc) : null)
-        : computeRegiomontanusHouses(natalDate, natalObserver, { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc }, SPHERE_RADIUS))
-    : null;
+  const system = chart2dHouseSystemSelect.value;
+  const equalWheel = system === 'regio-equal';
+  const regioCusps = () => computeRegiomontanusHouses(natalDate, natalObserver, { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc }, SPHERE_RADIUS);
+  // The equal wheel needs the cusps to place everything even with the house
+  // lines hidden.
+  const houses = system === 'whole-sign'
+    ? (showHouses && lastState.asc ? computeWholeSignHouses(lastState.asc) : null)
+    : (showHouses || equalWheel ? regioCusps() : null);
   renderChart2D(chart2dSvg, {
     planets: lastState.planets.map(p => ({ ...p, motion: planetMotion(p.key, BODY_BY_KEY[p.key], natalDate).motion })),
     asc: lastState.asc, mc: lastState.mc, dsc: lastState.dsc, ic: lastState.ic,
-    houses, showHouses, showBounds, dateLabel: natalDate.toISOString().slice(0, 16).replace('T', ' '),
+    houses, showHouses, showBounds, equalWheel, dateLabel: natalDate.toISOString().slice(0, 16).replace('T', ' '),
   });
 }
 

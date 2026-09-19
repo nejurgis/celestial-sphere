@@ -6,19 +6,10 @@
 // screen from there, matching the direction houses 1→2→3…→12 actually sweep.
 
 import { ZODIAC_SIGNS, EGYPTIAN_BOUNDS, boundOf } from './astro.js';
-import { ELEMENT_COLORS } from './scene.js';
 
 const PLANET_GLYPHS = { Sun: '☉', Moon: '☽', Mercury: '☿', Venus: '♀', Mars: '♂', Jupiter: '♃', Saturn: '♄' };
-// Same accent per element as the 3D zodiac band (scene.js's ELEMENT_COLORS)
-// — was a separate, divergent pastel set before, so the two views disagreed
-// on what each element's color even was.
-const ELEMENT_FILL = Object.fromEntries(
-  Object.entries(ELEMENT_COLORS).map(([el, hex]) => [el, '#' + hex.toString(16).padStart(6, '0')])
-);
-
-// Egyptian-bound ruler colors — one per classical planet, used for both the
-// bounds-ring ticks and the small ruler badge under each planet glyph.
-const RULER_COLOR = { Mercury: '#5b8bd4', Venus: '#c05fa8', Mars: '#c0392b', Jupiter: '#7a4fbf', Saturn: '#555' };
+// The wheel is deliberately monochrome: greys and black only.
+const INK = '#222', GREY = '#777', LINE = '#999';
 
 const CX = 250, CY = 250;
 const R_OUTER = 232, R_SIGN_IN = 200;
@@ -34,42 +25,76 @@ const STACK_STEP = 34; // radial gap between bunched planets — room for each o
 // from the ASC — so elon increasing must DECREASE phi, not increase it.
 // (An earlier version had this backwards — the whole wheel visibly mirrored
 // left-right/spun the wrong way, reported as "the chart is reversed".)
-function toXY(elon, ascDeg, r) {
-  const phi = ((180 - (elon - ascDeg)) * Math.PI) / 180;
+// Equal-wheel mode: the 12 houses are drawn as equal 30° sectors (house 1 from
+// the ASC at 9 o'clock, counterclockwise), but each house is still bounded by its
+// real Regiomontanus cusp. Every ecliptic longitude is mapped piecewise-linearly
+// into its house's 30° sector, so planets keep their true place *within* their
+// house and the zodiac ring is warped to match (a sign that spans a wide house
+// looks wide, one squeezed between narrow houses looks narrow). null = the
+// ordinary true-longitude wheel.
+let REL = null;
+
+function makeEqualWheelMap(cusps) {
+  return elon => {
+    const norm = ((elon % 360) + 360) % 360;
+    for (let h = 1; h <= 12; h++) {
+      const lo = cusps[h], hi = cusps[h === 12 ? 1 : h + 1];
+      const span = (((hi - lo) % 360) + 360) % 360;
+      const inside = (((norm - lo) % 360) + 360) % 360;
+      if (inside < span || (h === 12 && inside === span)) return (h - 1) * 30 + (span > 0 ? (inside / span) * 30 : 0);
+    }
+    return 0;
+  };
+}
+
+// Degrees from the ASC around the wheel, counterclockwise.
+const relOf = (elon, ascDeg) => (REL ? REL(elon) : (((elon - ascDeg) % 360) + 360) % 360);
+
+function xyRel(rel, r) {
+  const phi = ((180 - rel) * Math.PI) / 180;
   return [CX + r * Math.cos(phi), CY + r * Math.sin(phi)];
 }
 
-// Arc from elonFrom to elonTo in the direction of increasing longitude
-// (which is how toXY's phi sweeps, i.e. counterclockwise on screen —
-// sweep-flag 0, matching phi's negated relationship to elon above).
-function arcPath(ascDeg, r, elonFrom, elonTo) {
-  const [x1, y1] = toXY(elonFrom, ascDeg, r);
-  const [x2, y2] = toXY(elonTo, ascDeg, r);
-  const sweep = ((elonTo - elonFrom) % 360 + 360) % 360;
-  const largeArc = sweep > 180 ? 1 : 0;
-  return `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 0 ${x2} ${y2}`;
+function toXY(elon, ascDeg, r) {
+  return xyRel(relOf(elon, ascDeg), r);
 }
 
-export function renderChart2D(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, dateLabel }) {
+// Midpoint (in wheel degrees) of the stretch from elon a to elon b.
+function relMid(a, b, ascDeg) {
+  const ra = relOf(a, ascDeg);
+  const span = (((relOf(b, ascDeg) - ra) % 360) + 360) % 360;
+  return ra + span / 2;
+}
+
+export function renderChart2D(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, dateLabel, equalWheel }) {
+  REL = equalWheel && houses ? makeEqualWheelMap(houses) : null;
+  try {
+    drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, dateLabel });
+  } finally {
+    REL = null;
+  }
+}
+
+function drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, dateLabel }) {
   const ascDeg = ((asc.deg % 360) + 360) % 360;
   const parts = [];
 
+  // The zodiac ring: an outer and an inner circle with a straight divider at each
+  // sign boundary (drawn as circles + lines rather than 12 wedge paths — a wedge's
+  // inner arc has to be traced in the opposite direction and, for a sign that spans
+  // a wide stretch of the equal wheel, went wrong and showed up as a stray
+  // elliptical curve).
   parts.push(`<circle cx="${CX}" cy="${CY}" r="${R_OUTER}" fill="none" stroke="#333" stroke-width="1.5"/>`);
   parts.push(`<circle cx="${CX}" cy="${CY}" r="${R_SIGN_IN}" fill="none" stroke="#999" stroke-width="1"/>`);
-  // Inner circle capping the house spokes — same idea as a traditional
-  // printed wheel's small center ring (an empty hub the spokes converge on)
-  // rather than the spokes just trailing off toward the middle.
+  // Small hub the house spokes converge on.
   parts.push(`<circle cx="${CX}" cy="${CY}" r="${R_HOUSE_LINE_IN}" fill="none" stroke="#999" stroke-width="1"/>`);
 
-  // Zodiac ring — 12 sign wedges, tinted by element.
   ZODIAC_SIGNS.forEach((sign, i) => {
     const from = i * 30, to = from + 30;
-    const outerArc = arcPath(ascDeg, R_OUTER, from, to);
-    const [xi2, yi2] = toXY(to, ascDeg, R_SIGN_IN);
-    const [xi1, yi1] = toXY(from, ascDeg, R_SIGN_IN);
-    const d = `${outerArc} L ${xi2} ${yi2} A ${R_SIGN_IN} ${R_SIGN_IN} 0 0 0 ${xi1} ${yi1} Z`;
-    parts.push(`<path d="${d}" fill="${ELEMENT_FILL[sign.element]}" fill-opacity="0.55" stroke="#bbb" stroke-width="0.5"/>`);
-    const [gx, gy] = toXY(from + 15, ascDeg, (R_OUTER + R_SIGN_IN) / 2);
+    const [bx1, by1] = toXY(from, ascDeg, R_SIGN_IN);
+    const [bx2, by2] = toXY(from, ascDeg, R_OUTER);
+    parts.push(`<line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="#999" stroke-width="0.8"/>`);
+    const [gx, gy] = xyRel(relMid(from, to, ascDeg), (R_OUTER + R_SIGN_IN) / 2);
     // ︎ (VS15, text-presentation selector) forces the plain glyph
     // instead of WebKit's colorful emoji-style rendering for the zodiac
     // Unicode block (U+2648-2653) — font-family alone doesn't override
@@ -88,17 +113,14 @@ export function renderChart2D(svg, { planets, asc, mc, dsc, ic, houses, showHous
 
   // Egyptian bounds — 5 unequal ruled segments per sign, colored by ruler.
   if (showBounds) {
-    parts.push(`<circle cx="${CX}" cy="${CY}" r="${R_BOUNDS_OUT}" fill="none" stroke="#ccc" stroke-width="0.5"/>`);
-    parts.push(`<circle cx="${CX}" cy="${CY}" r="${R_BOUNDS_IN}" fill="none" stroke="#ccc" stroke-width="0.5"/>`);
     EGYPTIAN_BOUNDS.forEach((terms, signIndex) => {
       let from = 0;
       terms.forEach(({ ruler, to }) => {
-        const mid = signIndex * 30 + (from + to) / 2;
         const [x1, y1] = toXY(signIndex * 30 + from, ascDeg, R_BOUNDS_IN);
         const [x2, y2] = toXY(signIndex * 30 + from, ascDeg, R_BOUNDS_OUT);
         parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#ccc" stroke-width="0.5"/>`);
-        const [lx, ly] = toXY(mid, ascDeg, R_BOUNDS_LABEL);
-        parts.push(`<text x="${lx}" y="${ly}" font-size="8" text-anchor="middle" dominant-baseline="central" fill="${RULER_COLOR[ruler]}">${ruler[0]}</text>`);
+        const [lx, ly] = xyRel(relMid(signIndex * 30 + from, signIndex * 30 + to, ascDeg), R_BOUNDS_LABEL);
+        parts.push(`<text x="${lx}" y="${ly}" font-size="8" text-anchor="middle" dominant-baseline="central" fill="${GREY}">${ruler[0]}</text>`);
         from = to;
       });
     });
@@ -123,32 +145,53 @@ export function renderChart2D(svg, { planets, asc, mc, dsc, ic, houses, showHous
       if (angleDeg != null && angularDist(cuspDeg, angleDeg) < 0.25) continue;
       const [x1, y1] = toXY(cuspDeg, ascDeg, R_HOUSE_LINE_IN);
       const [x2, y2] = toXY(cuspDeg, ascDeg, R_SIGN_IN);
-      parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#c99" stroke-width="1.3"/>`);
-      const [lx, ly] = toXY(cuspDeg + 3, ascDeg, R_HOUSE_LABEL);
+      parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${LINE}" stroke-width="1.3"/>`);
+      const [lx, ly] = REL ? xyRel((h - 1) * 30 + 15, R_HOUSE_LABEL) : toXY(cuspDeg + 3, ascDeg, R_HOUSE_LABEL);
       parts.push(`<text x="${lx}" y="${ly}" font-size="10" text-anchor="middle" fill="#888">${h}</text>`);
     }
   }
 
   // Angles — ASC/DSC/MC/IC, always shown (they're real regardless of the
-  // houses toggle; house cusps 1/4/7/10 sit exactly on top of these).
+  // houses toggle; house cusps 1/4/7/10 sit exactly on top of these). Each is
+  // labelled with its own degree and sign.
+  const degSign = deg => {
+    const d = ((deg % 360) + 360) % 360;
+    let whole = Math.floor(d % 30), min = Math.round(((d % 30) - whole) * 60);
+    let signIndex = Math.floor(d / 30);
+    if (min === 60) { min = 0; whole += 1; if (whole === 30) { whole = 0; signIndex = (signIndex + 1) % 12; } }
+    return `${whole}°${String(min).padStart(2, '0')}′${ZODIAC_SIGNS[signIndex].glyph}\uFE0E`;
+  };
+  // Outside the ring, anchored away from it so the text never runs into the wheel.
+  const outsideLabel = (deg, r, inner, size = 11) => {
+    const [x, y] = toXY(deg, ascDeg, r);
+    const dx = x - CX;
+    const anchor = Math.abs(dx) < 40 ? 'middle' : dx < 0 ? 'end' : 'start';
+    return `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}" dominant-baseline="central" fill="${INK}">${inner}</text>`;
+  };
   const angleDefs = [
-    { key: 'ASC', deg: asc.deg, color: '#0e8a94' },
-    { key: 'DSC', deg: dsc.deg, color: '#0e8a94' },
-    { key: 'MC', deg: mc.deg, color: '#d4a017' },
-    { key: 'IC', deg: ic.deg, color: '#d4a017' },
+    { key: 'ASC', deg: asc.deg }, { key: 'DSC', deg: dsc.deg },
+    { key: 'MC', deg: mc.deg }, { key: 'IC', deg: ic.deg },
   ];
-  angleDefs.forEach(({ key, deg, color }) => {
+  angleDefs.forEach(({ key, deg }) => {
     const [x1, y1] = toXY(deg, ascDeg, R_HOUSE_LINE_IN);
     const [x2, y2] = toXY(deg, ascDeg, R_OUTER);
-    parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2"/>`);
-    const [lx, ly] = toXY(deg, ascDeg, R_ANGLE_LABEL);
-    parts.push(`<text x="${lx}" y="${ly}" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="${color}">${key}</text>`);
+    parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${INK}" stroke-width="2"/>`);
+    parts.push(outsideLabel(deg, R_ANGLE_LABEL, `<tspan font-weight="700" font-size="12">${key}</tspan> ${degSign(deg)}`));
   });
+
+  // The other eight cusps: degree and sign at the rim, with their house lines.
+  if (showHouses && houses) {
+    const isAngle = h => h === 1 || h === 4 || h === 7 || h === 10;
+    for (let h = 1; h <= 12; h++) {
+      if (isAngle(h) || houses[h] == null) continue;
+      parts.push(outsideLabel(houses[h], R_ANGLE_LABEL, degSign(houses[h]), 10.5));
+    }
+  }
 
   // Planets — placed by true longitude; ones bunched within 6° stack inward
   // so their glyphs stay legible instead of overlapping.
   const withRel = planets
-    .map(p => ({ ...p, rel: ((p.elon - ascDeg) % 360 + 360) % 360 }))
+    .map(p => ({ ...p, rel: relOf(p.elon, ascDeg) }))
     .sort((a, b) => a.rel - b.rel);
   let lastRel = null, stack = 0;
   withRel.forEach(p => {
@@ -164,12 +207,12 @@ export function renderChart2D(svg, { planets, asc, mc, dsc, ic, houses, showHous
     let deg = Math.floor(inSign), min = Math.round((inSign - deg) * 60);
     if (min === 60) { deg += 1; min = 0; }
     const flag = p.motion === 'retrograde' ? ' ℞' : p.motion === 'stationary' ? ' S' : '';
-    const flagColor = p.motion === 'retrograde' ? '#c0392b' : '#d97706';
+    const flagColor = INK;
     const [tx, ty] = toXY(p.elon, ascDeg, r + 17);
     parts.push(`<text x="${tx}" y="${ty}" font-size="9" text-anchor="middle" dominant-baseline="central" fill="${flag ? flagColor : '#555'}" ${flag ? 'font-weight="700"' : ''}>${deg}°${String(min).padStart(2, '0')}′${flag}</text>`);
     if (showBounds) {
       const ruler = boundOf(p.elon).ruler;
-      parts.push(`<text x="${x}" y="${y + 13}" font-size="7" font-weight="700" text-anchor="middle" fill="${RULER_COLOR[ruler]}">${ruler[0]}</text>`);
+      parts.push(`<text x="${x}" y="${y + 13}" font-size="7" font-weight="700" text-anchor="middle" fill="${GREY}">${ruler[0]}</text>`);
     }
   });
 
