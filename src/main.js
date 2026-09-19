@@ -1103,12 +1103,7 @@ function rebuild() {
 // Centre of the 2D wheel: birth date, time, UTC offset and place, in the birth
 // place's time zone (the one the date field is read in).
 function chartHubLines() {
-  const dm = (value, pos, neg) => {
-    const a = Math.abs(value);
-    let d = Math.floor(a), m = Math.round((a - d) * 60);
-    if (m === 60) { m = 0; d += 1; }
-    return `${d}° ${value >= 0 ? pos : neg} ${m}′`;
-  };
+  const dm = (value, pos, neg) => `${Math.abs(value).toFixed(2)}° ${value >= 0 ? pos : neg}`;
   return [
     formatDateInTz(natalDate, birthTz),
     formatClockInTz(natalDate, birthTz),
