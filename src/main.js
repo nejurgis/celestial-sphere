@@ -1270,6 +1270,7 @@ function coordField(input, pos, neg, limit) {
   const setText = (t, caret) => {
     input.value = t;
     input.setSelectionRange(caret, caret);
+    input.dispatchEvent(new Event('input'));       // live update while typing
   };
   input.addEventListener('beforeinput', e => {
     const t = input.value;
@@ -1416,6 +1417,13 @@ function onPlaceSelected(place) {
 initPlacePicker({ input: placeInput, list: placeList, onSelect: onPlaceSelected });
 // Coordinates typed by hand also change the zone.
 [latInput, lonInput].forEach(el => el.addEventListener('change', refreshTimeZone));
+// Sphere and wheel follow the coordinates while typing (one rebuild per frame);
+// the zone lookup waits for the field to be committed.
+let liveFrame = 0;
+[latInput, lonInput].forEach(el => el.addEventListener('input', () => {
+  if (liveFrame) return;
+  liveFrame = requestAnimationFrame(() => { liveFrame = 0; rebuild(); });
+}));
 
 nowBtn.addEventListener('click', () => {
   dateInput.value = toLocalDatetimeValue(new Date());
