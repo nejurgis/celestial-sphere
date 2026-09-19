@@ -479,6 +479,7 @@ let natalPoleDirection = null; // THREE.Vector3, set at rebuild() — axis the s
 // until this resolves, then a rebuild is triggered so it appears.
 let starCatalog = null;
 fetch('/bright_stars.json').then(r => r.json()).then(data => { starCatalog = data; rebuild(); });
+let aspectMoments = []; // exact aspects of the promissor to the significator
 let boundCrossings = []; // Egyptian-bound changes the current direction passes through
 
 // Diurnal-rotation playback — the sky's own real 24h turn, independent of
@@ -557,6 +558,26 @@ function renderBoundCrossings() {
     });
   });
   updateBoundCrossingsPassed();
+}
+
+// Exact aspect moments of the selected promissor to the selected significator
+// (the perfection of each aspect, nearest of sinister/dexter). Like the bound
+// chips, clicking one jumps there — it selects that aspect and moves the
+// transport to its exact moment.
+function renderAspectMoments() {
+  aspectMomentsEl.innerHTML = aspectMoments.map((m, i) => {
+    const when = new Date(natalDate.getTime() + m.years * 365.2422 * 86400000);
+    const label = when.toLocaleDateString('en', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    return `<span class="crossing aspect-moment${m.abs === parseFloat(aspectSelect.value) ? ' current' : ''}" data-index="${i}" title="Exact at ${m.years.toFixed(2)} yrs${m.converse ? ' (converse)' : ''}">${ASPECT_GLYPHS[m.abs]} ${m.years.toFixed(1)}y · ${label}</span>`;
+  }).join('');
+  aspectMomentsEl.querySelectorAll('.aspect-moment').forEach(el => {
+    el.addEventListener('click', () => {
+      stopPlaying();
+      const m = aspectMoments[Number(el.dataset.index)];
+      if (String(m.abs) !== aspectSelect.value) { aspectSelect.value = String(m.abs); rebuild(); }
+      setDirectionYears(direction ? direction.arcYears : m.years);
+    });
+  });
 }
 
 function updateBoundCrossingsPassed() {
@@ -1049,24 +1070,35 @@ function rebuild() {
     // (backward) point; there is no reason to make the user pick — one of the
     // two can be hundreds of years away — so the one that perfects first wins.
     const significatorPoint = resolveDirectionPoint(significatorKey, state);
-    const candidates = [];
-    if (aspectAbs !== 0 && BODY_BY_KEY[promissorKey]) {
-      const promissorAspectPlane = computeAspectPlane(BODY_BY_KEY[promissorKey], date, state.observer, SPHERE_RADIUS);
-      if (layers.aspectPlane) skyGroup.add(buildAspectPlane(promissorAspectPlane, promissorKey, { radius: otherLineWidth }));
-      const signs = aspectAbs === 180 ? [1] : [1, -1]; // the opposition's two points coincide
-      for (const sign of signs) {
-        const aspectPoint = computeAspectPoint(promissorAspectPlane, aspectAbs * sign);
-        candidates.push({
-          key: `${promissorKey} ${ASPECT_GLYPHS[aspectSelect.value]}${sign < 0 ? ' (dex)' : ''}`,
-          ra: aspectPoint.ra, dec: aspectPoint.dec,
-        });
-      }
-    } else {
-      candidates.push(promissorPoint);
+    const promissorAspectPlane = BODY_BY_KEY[promissorKey]
+      ? computeAspectPlane(BODY_BY_KEY[promissorKey], date, state.observer, SPHERE_RADIUS) : null;
+    if (promissorAspectPlane && aspectAbs !== 0 && layers.aspectPlane) {
+      skyGroup.add(buildAspectPlane(promissorAspectPlane, promissorKey, { radius: otherLineWidth }));
     }
-    for (const candidate of candidates) {
-      const d = computeRegiomontanusDirection(candidate, significatorPoint, date, state.observer, { mc: state.mc }, SPHERE_RADIUS);
-      if (!direction || d.arcYears < direction.arcYears) direction = d;
+    const nearestFor = abs => {
+      const cands = [];
+      if (abs !== 0 && promissorAspectPlane) {
+        const signs = abs === 180 ? [1] : [1, -1]; // the opposition's two points coincide
+        for (const sign of signs) {
+          const aspectPoint = computeAspectPoint(promissorAspectPlane, abs * sign);
+          cands.push({ key: `${promissorKey} ${ASPECT_GLYPHS[abs]}${sign < 0 ? ' (dex)' : ''}`, ra: aspectPoint.ra, dec: aspectPoint.dec });
+        }
+      } else cands.push(promissorPoint);
+      let best = null;
+      for (const c of cands) {
+        const d = computeRegiomontanusDirection(c, significatorPoint, date, state.observer, { mc: state.mc }, SPHERE_RADIUS);
+        if (!best || d.arcYears < best.arcYears) best = d;
+      }
+      return best;
+    };
+    direction = nearestFor(aspectAbs);
+    // Every exact aspect moment of this pair (within a lifespan), listed like the bound changes.
+    aspectMoments = [];
+    if (promissorAspectPlane) {
+      for (const abs of [0, 60, 90, 120, 180]) {
+        const d = abs === aspectAbs ? direction : nearestFor(abs);
+        if (d.arcYears <= 120) aspectMoments.push({ abs, years: d.arcYears, converse: !!d.swapped });
+      }
     }
     const { group, markerMesh, markerMaterial, label, traveledLine, remainingLine, boundLabel } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);
     group.visible = layers.direction;
@@ -1079,9 +1111,11 @@ function rebuild() {
   } else {
     slider.max = '1';
     boundCrossings = [];
+    aspectMoments = [];
   }
   slider.value = '0';
   renderBoundCrossings();
+  renderAspectMoments();
   updateReadout();
   updateLegend(layers, significatorKey, promissorKey);
 
@@ -1615,6 +1649,7 @@ const stepSizeSelect = document.getElementById('dir-step-size');
 const slider = document.getElementById('dir-slider');
 const readout = document.getElementById('direction-readout');
 const boundCrossingsEl = document.getElementById('bound-crossings');
+const aspectMomentsEl = document.getElementById('aspect-moments');
 
 [promissorSelect, aspectSelect].forEach(el => el.addEventListener('change', rebuild));
 
