@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeZodiacBand,
-  computeAspectPlane, computeAspectPoint, computeAllDirections, computeRegiomontanusHouses,
+  computeAspectPlane, computeAspectPoint, eclipticPointToEquatorial, computeAllDirections, computeRegiomontanusHouses,
   computeBoundCrossings, computeRegiomontanusDirection, boundOf, planetMotion, computeYearView,
   computeSkyRotationBasis, computeStarField, ZODIAC_SIGNS,
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
@@ -1077,7 +1077,14 @@ function rebuild() {
     }
     const nearestFor = abs => {
       const cands = [];
-      if (abs !== 0 && promissorAspectPlane) {
+      const angle = { ASC: state.asc, DSC: state.dsc, MC: state.mc, IC: state.ic }[promissorKey];
+      if (abs !== 0 && angle) {
+        // Angles lie on the ecliptic: their aspects are ecliptic points.
+        for (const sign of abs === 180 ? [1] : [1, -1]) {
+          const eq = eclipticPointToEquatorial((((angle.deg + abs * sign) % 360) + 360) % 360, 0, date);
+          cands.push({ key: `${promissorKey} ${ASPECT_GLYPHS[abs]}${sign < 0 ? ' (dex)' : ''}`, ra: eq.ra, dec: eq.dec });
+        }
+      } else if (abs !== 0 && promissorAspectPlane) {
         const signs = abs === 180 ? [1] : [1, -1]; // the opposition's two points coincide
         for (const sign of signs) {
           const aspectPoint = computeAspectPoint(promissorAspectPlane, abs * sign);
@@ -1094,7 +1101,7 @@ function rebuild() {
     direction = nearestFor(aspectAbs);
     // Every exact aspect moment of this pair (within a lifespan), listed like the bound changes.
     aspectMoments = [];
-    if (promissorAspectPlane) {
+    if (promissorAspectPlane || ANGLE_KEYS.includes(promissorKey)) {
       for (const abs of [0, 60, 90, 120, 180]) {
         const d = abs === aspectAbs ? direction : nearestFor(abs);
         if (d.arcYears <= 120) aspectMoments.push({ abs, years: d.arcYears, converse: !!d.swapped });

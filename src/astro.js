@@ -1276,12 +1276,21 @@ export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate,
     const body = bodyOf(promissorKey);
     const basePoint = resolvePoint(promissorKey);
     const aspectPlane = body ? computeAspectPlane(body, natalDate, observer, radius) : null;
-    const variants = body ? ASPECT_DEFS : [ASPECT_DEFS[0]];
+    // An angle sits on the ecliptic (latitude 0), so its aspect "plane" is the
+    // ecliptic itself: aspects are the ecliptic points ±deg away. Morin used
+    // angles only as significators; Morinus and modern practice (Louis) let
+    // them act as promissors too. House cusps stay conjunction-only.
+    const angleDeg = body ? undefined : opts.angles?.[promissorKey.toLowerCase()]?.deg;
+    const variants = (body || angleDeg !== undefined) ? ASPECT_DEFS : [ASPECT_DEFS[0]];
 
     for (const variant of variants) {
       let promissorPoint = basePoint;
       let promissorElon = aspectPlane ? aspectPlane.planetElon : null;
-      if (variant.deg !== 0) {
+      if (variant.deg !== 0 && angleDeg !== undefined) {
+        promissorElon = (((angleDeg + variant.deg) % 360) + 360) % 360;
+        const eq = eclipticPointToEquatorial(promissorElon, 0, natalDate);
+        promissorPoint = { key: promissorKey, ra: eq.ra, dec: eq.dec };
+      } else if (variant.deg !== 0) {
         const aspectPoint = computeAspectPoint(aspectPlane, variant.deg);
         promissorPoint = { key: promissorKey, ra: aspectPoint.ra, dec: aspectPoint.dec };
         promissorElon = aspectPoint.elon;

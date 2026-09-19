@@ -437,3 +437,13 @@ Choices and limits:
 - `verify-directions.mjs` checks the definition (Sun/Moon at the returns equal their
   natal longitudes; profected sign steps one per year), not published dates — none of
   the sources tabulates returns for the example charts.
+
+## Angles as promissors
+
+Morin used ASC/MC/IC/DSC (and house cusps) only as significators. Louis (*Primary
+Directions in Astrology: A Primer*) notes that many astrologers, and the Morinus
+program, also use the angles as promissors and let aspects of promissors act as
+promissors. We allow it: an angle lies on the ecliptic (latitude 0), so its aspect
+circle is the ecliptic itself and its aspects are the ecliptic points ±60/90/120/180°
+from it (sinister/dexter as for planets). House cusps stay conjunction-only. No book
+example checks these rows; they follow the modern convention.
