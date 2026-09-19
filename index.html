@@ -278,7 +278,7 @@
       }
       #chart2d-panel[hidden] { display: none; }
       .chart2d-body { padding: 4px 16px 16px; display: flex; justify-content: center; }
-      #chart2d-svg { width: 600px; height: 563px; user-select: none; -webkit-user-select: none; }
+      #chart2d-svg { width: 600px; height: 668px; user-select: none; -webkit-user-select: none; }
 
       /* Guided tour / Regiomontanus construction narration — see main.js's
          startGuidedTour/endGuidedTour and startRegioConstruction/
@@ -522,7 +522,7 @@
         <div class="table-panel-header">
           <h2>2D Chart</h2>
           <label><input type="checkbox" id="chart2d-houses" checked> Houses</label>
-          <select id="chart2d-house-system" title="Regiomontanus cusps drawn as an equal wheel: every house is a 30° sector, planets keep their true place inside their own house, and the zodiac ring bends to fit. True zodiac: the ordinary wheel where house widths differ. Whole sign: house 1 is the Ascendant's whole sign, no equator math.">
+          <select id="chart2d-house-system" title="Regiomontanus cusps drawn as an equal wheel: every house is a 30° sector and planets keep their true place inside their own house. True zodiac: the ordinary wheel, everything at its real ecliptic longitude, where house widths differ. Whole sign: house 1 is the Ascendant's whole sign, no equator math.">
             <option value="regio-equal" selected>Regiomontanus (equal wheel)</option>
             <option value="regiomontanus">Regiomontanus (true zodiac)</option>
             <option value="whole-sign">Whole sign</option>
@@ -531,7 +531,7 @@
           <button id="chart2d-close-btn" type="button" class="ghost-btn">✕</button>
         </div>
         <div class="chart2d-body">
-          <svg id="chart2d-svg" viewBox="-70 -50 640 600"></svg>
+          <svg id="chart2d-svg" viewBox="-60 -30 620 690"></svg>
         </div>
       </div>
 

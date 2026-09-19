@@ -1093,6 +1093,27 @@ function rebuild() {
   syncDaySlider();
 }
 
+// Centre of the 2D wheel: birth date, time, UTC offset and place, in the
+// browser's time zone (the same one the date field is read in).
+function chartHubLines() {
+  const offsetMin = -natalDate.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '−';
+  const abs = Math.abs(offsetMin);
+  const tz = `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+  const dm = (value, pos, neg) => {
+    const a = Math.abs(value);
+    let d = Math.floor(a), m = Math.round((a - d) * 60);
+    if (m === 60) { m = 0; d += 1; }
+    return `${d}° ${value >= 0 ? pos : neg} ${m}′`;
+  };
+  return [
+    natalDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    natalDate.toLocaleTimeString('en-GB', { hour12: false }),
+    tz,
+    `${dm(natalObserver.longitude, 'E', 'W')}, ${dm(natalObserver.latitude, 'N', 'S')}`,
+  ];
+}
+
 function renderChart2DPanel() {
   if (!lastState) return;
   const showHouses = chart2dHousesCheckbox.checked;
@@ -1108,7 +1129,7 @@ function renderChart2DPanel() {
   renderChart2D(chart2dSvg, {
     planets: lastState.planets.map(p => ({ ...p, motion: planetMotion(p.key, BODY_BY_KEY[p.key], natalDate).motion })),
     asc: lastState.asc, mc: lastState.mc, dsc: lastState.dsc, ic: lastState.ic,
-    houses, showHouses, showBounds, equalWheel, dateLabel: natalDate.toISOString().slice(0, 16).replace('T', ' '),
+    houses, showHouses, showBounds, equalWheel, hubLines: chartHubLines(),
   });
 }
 
