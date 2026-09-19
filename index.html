@@ -322,6 +322,21 @@
       #year-body .yv-note { margin-top: 8px; color: #888; font-size: 0.76rem; }
       #table-body tr[data-i] { cursor: pointer; }
       #table-body tr[data-i]:hover td { filter: brightness(0.94); }
+      /* Birth-place picker (Nominatim search + IANA time zone). */
+      #place-wrap { position: relative; }
+      #place-list {
+        position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 40; margin: 0; padding: 4px; list-style: none;
+        background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        max-height: 280px; overflow: auto;
+      }
+      #place-list[hidden] { display: none; }
+      #place-list li { padding: 6px 8px; cursor: pointer; border-radius: 5px; display: flex; flex-direction: column; gap: 1px; }
+      #place-list li:hover { background: #eef3fa; }
+      #place-list .pl-primary { font-size: 0.85rem; color: #222; }
+      #place-list .pl-secondary { font-size: 0.7rem; color: #888; line-height: 1.3; }
+      #place-list li.pl-credit { cursor: default; font-size: 0.65rem; color: #aaa; }
+      #place-list li.pl-credit:hover { background: none; }
+      #place-status { font-size: 0.72rem; color: #888; margin-top: -3px; }
     </style>
   </head>
   <body>
@@ -344,9 +359,16 @@
           Primary directions
           <span class="help" data-tip="A classical astrological forecasting technique: a promissor point (planet or angle) is 'directed' — swept forward along the celestial equator — until it reaches an aspect to a significator, converting the arc into years via the Naibod key. Turns on the directional arc, position circle, and Morinus aspect plane, plus the transport panel at the bottom.">?</span>
         </label>
-        <label>Date &amp; time (local)
+        <label>Birth date &amp; time (place's local time)
           <input id="date-input" type="datetime-local">
         </label>
+        <label>Birth place
+          <div id="place-wrap">
+            <input id="place-input" type="text" placeholder="Search a city…" autocomplete="off" spellcheck="false" aria-label="Birth place" style="width: 100%; box-sizing: border-box;">
+            <ul id="place-list" role="listbox" aria-label="Place suggestions" hidden></ul>
+          </div>
+        </label>
+        <div id="place-status"></div>
         <!-- Touch-only (see main.js's isTouchDevice/body.is-touch) — a
              single 24h noon-to-noon window, dragged through directly,
              with a real day/night/twilight gradient behind it. Same UX as

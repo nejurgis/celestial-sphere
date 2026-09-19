@@ -35,3 +35,4 @@ network-use clause for that dependency.
 - Milky Way texture — NASA SVS "Deep Star Maps 2020" (public domain).
 - Ground landscape photo — Poly Haven "Horn-Koppe Spring" HDRI (CC0).
 - Star catalog (`public/bright_stars.json`) — HYG database (public domain).
+- Birth-place search — [OpenStreetMap Nominatim](https://nominatim.org/) (© OpenStreetMap contributors, ODbL); time zone of a place via [timeapi.io](https://timeapi.io/) through `functions/api/timezone.js`. The UTC offset for a birth date comes from the browser's own historical IANA time-zone data.

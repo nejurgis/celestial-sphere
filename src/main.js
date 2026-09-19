@@ -20,6 +20,8 @@ import {
   buildPlacidusConstruction, revealPlacidusCurvePartial, disposePlacidusConstruction, updatePlacidusConstruction,
 } from './scene.js';
 import { renderChart2D } from './chart2d.js';
+import { formatLocalInput, parseLocalInput, formatClockInTz, formatDateInTz, offsetLabel, isValidTz } from './timezone.js';
+import { initPlacePicker, fetchTimeZone } from './place-picker.js';
 import { updateTextSprite } from './labels.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -27,6 +29,11 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { warpActiveUniform, stereographicFovRemap } from './stereographic.js';
 import { initStellarium, syncStellariumTime, syncStellariumLocation, syncStellariumCamera, addStellariumZodiacBand } from './stellarium-bridge.js';
 import { sliderStartTime, minutesSinceSliderStart, computeDayStops, hintForMinute, buildGradientSvg } from './day-slider.js';
+
+// The IANA time zone the date/time field is read in — the BIRTH PLACE's zone (set by
+// the place picker), not the viewer's computer's. Defaults to the default place, Vilnius.
+let birthTz = 'Europe/Vilnius';
+const readDateInput = () => (dateInput.value && parseLocalInput(dateInput.value, birthTz)) || new Date();
 
 const BODY_BY_KEY = Object.fromEntries(PLANETS.map(p => [p.key, p.body]));
 const ANGLE_KEYS = ['ASC', 'DSC', 'MC', 'IC'];
@@ -708,8 +715,7 @@ function setDirectionYears(t) {
 }
 
 function formatClockTime(date) {
-  const pad = n => String(n).padStart(2, '0');
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return formatClockInTz(date, birthTz);
 }
 
 function setDayRotationDeg(deg) {
@@ -878,10 +884,11 @@ function applySunBrightness() {
 }
 
 function rebuild() {
-  const date = new Date(dateInput.value || Date.now());
+  const date = readDateInput();
   const latitude = parseFloat(latInput.value);
   const longitude = parseFloat(lonInput.value);
   if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
+  updateTzStatus();
 
   if (stelInstance) {
     syncStellariumTime(stelInstance, date);
@@ -1093,13 +1100,9 @@ function rebuild() {
   syncDaySlider();
 }
 
-// Centre of the 2D wheel: birth date, time, UTC offset and place, in the
-// browser's time zone (the same one the date field is read in).
+// Centre of the 2D wheel: birth date, time, UTC offset and place, in the birth
+// place's time zone (the one the date field is read in).
 function chartHubLines() {
-  const offsetMin = -natalDate.getTimezoneOffset();
-  const sign = offsetMin >= 0 ? '+' : '−';
-  const abs = Math.abs(offsetMin);
-  const tz = `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
   const dm = (value, pos, neg) => {
     const a = Math.abs(value);
     let d = Math.floor(a), m = Math.round((a - d) * 60);
@@ -1107,9 +1110,9 @@ function chartHubLines() {
     return `${d}° ${value >= 0 ? pos : neg} ${m}′`;
   };
   return [
-    natalDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    natalDate.toLocaleTimeString('en-GB', { hour12: false }),
-    tz,
+    formatDateInTz(natalDate, birthTz),
+    formatClockInTz(natalDate, birthTz),
+    offsetLabel(birthTz, natalDate),
     `${dm(natalObserver.longitude, 'E', 'W')}, ${dm(natalObserver.latitude, 'N', 'S')}`,
   ];
 }
@@ -1281,13 +1284,52 @@ function syncPrimaryDirectionsLayerRows() {
 }
 
 function toLocalDatetimeValue(date) {
-  const pad = n => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return formatLocalInput(date, birthTz);
 }
 
 dateInput.value = toLocalDatetimeValue(new Date());
 latInput.value = '54.68';   // Vilnius
 lonInput.value = '25.28';
+
+// ── Birth place and time zone ────────────────────────────────────────────
+// The date/time field is the birth place's wall-clock time. The place picker
+// fills the coordinates; the time zone is always DERIVED from the coordinates
+// (looked up whenever they change), never chosen by hand. (See timezone.js /
+// place-picker.js.)
+const placeInput = document.getElementById('place-input');
+const placeList = document.getElementById('place-list');
+const placeStatus = document.getElementById('place-status');
+let tzNotice = '';
+let tzLookupTicket = 0;
+placeInput.value = 'Vilnius, Lithuania';
+
+function updateTzStatus() {
+  if (!placeStatus) return;
+  placeStatus.textContent = `${birthTz} · ${offsetLabel(birthTz, readDateInput())} on that date${tzNotice}`;
+}
+
+// Coordinates -> zone -> rebuild. If the lookup fails the previous zone is kept
+// and the status line says so.
+async function refreshTimeZone() {
+  const lat = parseFloat(latInput.value), lon = parseFloat(lonInput.value);
+  if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+  const ticket = ++tzLookupTicket;
+  placeStatus.textContent = 'Looking up the time zone…';
+  const tz = await fetchTimeZone(lat, lon);
+  if (ticket !== tzLookupTicket) return; // superseded by a newer lookup
+  if (tz && isValidTz(tz)) { birthTz = tz; tzNotice = ''; }
+  else tzNotice = ' — couldn’t detect the zone for these coordinates, kept the previous one';
+  rebuild();
+}
+
+function onPlaceSelected(place) {
+  latInput.value = place.lat.toFixed(4);
+  lonInput.value = place.lon.toFixed(4);
+  return refreshTimeZone();
+}
+initPlacePicker({ input: placeInput, list: placeList, onSelect: onPlaceSelected });
+// Coordinates typed by hand also change the zone.
+[latInput, lonInput].forEach(el => el.addEventListener('change', refreshTimeZone));
 
 nowBtn.addEventListener('click', () => {
   dateInput.value = toLocalDatetimeValue(new Date());
@@ -1315,7 +1357,7 @@ let daySliderCachedLon = null;
 // (dateInput) rather than drifting out of sync with it.
 function syncDaySlider() {
   if (!document.body.classList.contains('is-touch')) return;
-  const date = new Date(dateInput.value || Date.now());
+  const date = readDateInput();
   const latitude = parseFloat(latInput.value);
   const longitude = parseFloat(lonInput.value);
   if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
@@ -1382,7 +1424,7 @@ function stopDateStepping() {
 }
 function stepDateBy(units) {
   const ms = DATE_STEP_MS[dateStepUnitSelect.value] * units;
-  const d = new Date(dateInput.value || Date.now());
+  const d = readDateInput();
   d.setTime(d.getTime() + ms);
   dateInput.value = toLocalDatetimeValue(d);
   rebuild();
@@ -1414,7 +1456,7 @@ datePlayBtn.addEventListener('click', () => {
   dateStepPlaying = !dateStepPlaying;
   datePlayBtn.textContent = dateStepPlaying ? '⏸' : '▶';
   if (dateStepPlaying) {
-    dateStepBaseMs = new Date(dateInput.value || Date.now()).getTime();
+    dateStepBaseMs = readDateInput().getTime();
     dateStepElapsedMs = 0;
     dateStepLastRebuildAt = 0;
     stopPlaying();
