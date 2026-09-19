@@ -1099,6 +1099,7 @@ function rebuild() {
         const d = abs === aspectAbs ? direction : nearestFor(abs);
         if (d.arcYears <= 120) aspectMoments.push({ abs, years: d.arcYears, converse: !!d.swapped });
       }
+      aspectMoments.sort((a, b) => a.years - b.years);
     }
     const { group, markerMesh, markerMaterial, label, traveledLine, remainingLine, boundLabel } = buildDirectionGroup(direction, direction.movingKey, direction.fixedKey);
     group.visible = layers.direction;
