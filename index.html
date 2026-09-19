@@ -337,7 +337,8 @@
       #place-list li.pl-credit { cursor: default; font-size: 0.65rem; color: #aaa; }
       #place-list li.pl-credit:hover { background: none; }
       #place-status { font-size: 0.72rem; color: #888; margin-top: -3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    </style>
+        #lat-input.invalid, #lon-input.invalid { border-color: #c0392b; }
+  </style>
   </head>
   <body>
     <div id="app">
@@ -401,10 +402,10 @@
         </div>
         <div class="row">
           <label>Latitude
-            <input id="lat-input" type="number" step="0.01" min="-90" max="90">
+            <input id="lat-input" type="text" inputmode="text" autocomplete="off" spellcheck="false">
           </label>
           <label>Longitude
-            <input id="lon-input" type="number" step="0.01" min="-180" max="180">
+            <input id="lon-input" type="text" inputmode="text" autocomplete="off" spellcheck="false">
           </label>
         </div>
         <button id="now-btn" type="button">Now</button>

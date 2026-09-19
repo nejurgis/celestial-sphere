@@ -885,8 +885,8 @@ function applySunBrightness() {
 
 function rebuild() {
   const date = readDateInput();
-  const latitude = parseFloat(latInput.value);
-  const longitude = parseFloat(lonInput.value);
+  const latitude = latField.get();
+  const longitude = lonField.get();
   if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
   updateTzStatus();
 
@@ -1103,12 +1103,11 @@ function rebuild() {
 // Centre of the 2D wheel: birth date, time, UTC offset and place, in the birth
 // place's time zone (the one the date field is read in).
 function chartHubLines() {
-  const dm = (value, pos, neg) => `${Math.abs(value).toFixed(2)}° ${value >= 0 ? pos : neg}`;
   return [
     formatDateInTz(natalDate, birthTz),
     formatClockInTz(natalDate, birthTz),
     offsetLabel(birthTz, natalDate),
-    `${dm(natalObserver.longitude, 'E', 'W')}, ${dm(natalObserver.latitude, 'N', 'S')}`,
+    `${formatCoord(natalObserver.longitude, 'E', 'W')}, ${formatCoord(natalObserver.latitude, 'N', 'S')}`,
   ];
 }
 
@@ -1231,6 +1230,101 @@ function animate() {
 const dateInput = document.getElementById('date-input');
 const latInput = document.getElementById('lat-input');
 const lonInput = document.getElementById('lon-input');
+
+// Coordinate fields are text: "54° 24.6′ N". Typing accepts decimals (comma or
+// dot), "54 24.6", "54°24′36″" and N/S/E/W. The exact value is kept beside the
+// text so reformatting never rounds it.
+function formatCoord(value, pos, neg) {
+  let d = Math.floor(Math.abs(value)), m = Math.round((Math.abs(value) - d) * 600) / 10;
+  if (m >= 60) { m = 0; d += 1; }
+  return `${d}° ${m.toFixed(1)}′ ${value < 0 ? neg : pos}`;
+}
+function parseCoord(text, pos, neg) {
+  const t = text.trim().toUpperCase().replace(',', '.').replace(/(\d),(\d)/g, '$1.$2');
+  const letters = t.match(/[NSEW]/g) || [];
+  if (letters.length > 1 || (letters.length && letters[0] !== pos && letters[0] !== neg)) return NaN;
+  const nums = (t.replace(/[NSEW]/g, ' ').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  if (!nums.length || nums.length > 3) return NaN;
+  const neg0 = nums[0] < 0 || /^-/.test(t.replace(/^\s*[NSEW]\s*/, ''));
+  const v = Math.abs(nums[0]) + (nums[1] || 0) / 60 + (nums[2] || 0) / 3600;
+  return (letters[0] === neg || neg0) ? -v : v;
+}
+function coordField(input, pos, neg, limit) {
+  const api = {
+    get() {
+      if (input.dataset.exact !== undefined && input.value === input.dataset.text) return Number(input.dataset.exact);
+      const mm = /^(\d*)° (\d*\.?\d*)′ ([NSEW])$/.exec(input.value);
+      const v = mm ? (Number(mm[1] || 0) + Number(mm[2] || 0) / 60) * (mm[3] === neg ? -1 : 1)
+        : parseCoord(input.value, pos, neg);
+      return Math.abs(v) <= limit ? v : NaN;
+    },
+    set(v) {
+      input.dataset.exact = String(v);
+      input.value = input.dataset.text = formatCoord(v, pos, neg);
+    },
+  };
+  // The ° ′ and hemisphere letter are part of the field's frame: edits only
+  // ever touch the digits, so the symbols cannot be deleted or typed over.
+  const maxDeg = limit === 90 ? 2 : 3;
+  const MASK = /^(\d*)° (\d*\.?\d*)′ ([NSEW])$/;
+  const setText = (t, caret) => {
+    input.value = t;
+    input.setSelectionRange(caret, caret);
+  };
+  const seg = () => {
+    const t = input.value;
+    return { t, d: t.indexOf('°'), m: t.indexOf('′') };
+  };
+  input.addEventListener('beforeinput', e => {
+    const { t, d, m } = seg();
+    const mm = MASK.exec(t);
+    if (!mm) return;
+    e.preventDefault();
+    let s = input.selectionStart, en = input.selectionEnd;
+    if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromDrop') {
+      const v = parseCoord((e.dataTransfer && e.dataTransfer.getData('text')) || e.data || '', pos, neg);
+      if (!Number.isNaN(v) && Math.abs(v) <= limit) { api.set(v); input.dispatchEvent(new Event('change')); }
+      return;
+    }
+    if (e.inputType.startsWith('delete')) {
+      const back = e.inputType.includes('Backward');
+      if (s === en) { if (back) s = Math.max(0, s - 1); else en = Math.min(t.length, en + 1); }
+      // Symbols are skipped: the caret moves over them instead of deleting.
+      let out = '', caret = s, removed = false;
+      for (let i = 0; i < t.length; i++) {
+        const del = i >= s && i < en && /[\d.]/.test(t[i]);
+        if (del) removed = true; else out += t[i];
+      }
+      if (!removed) { const hop = back ? s : en; setText(t, hop); return; }
+      const before = t.slice(0, s).replace(/[^\d.°′ ]/g, '');
+      setText(out, before.length ? Math.min(s, out.length) : s);
+      return;
+    }
+    const ch = e.data;
+    if (!ch) return;
+    const up = ch.toUpperCase();
+    if (up === pos || up === neg) { setText(`${mm[1]}° ${mm[2]}′ ${up}`, t.length); return; }
+    if (/[\s°'′.,]/.test(ch) && !(s > d && (ch === '.' || ch === ',') && en <= m)) {
+      // separator: hop to the next segment
+      setText(t, s <= d ? d + 2 : t.length);
+      return;
+    }
+    if (!/[\d.,]/.test(ch)) return;
+    const c = ch === ',' ? '.' : ch;
+    const next = t.slice(0, s) + c + t.slice(en);
+    const nm = MASK.exec(next);
+    if (!nm || nm[1].length > maxDeg || (nm[2].match(/\./g) || []).length > 1) return;
+    setText(next, s + 1);
+  });
+  input.addEventListener('change', () => {
+    const v = api.get();
+    if (Number.isNaN(v)) input.classList.add('invalid');
+    else { input.classList.remove('invalid'); api.set(v); }
+  });
+  return api;
+}
+const latField = coordField(latInput, 'N', 'S', 90);
+const lonField = coordField(lonInput, 'E', 'W', 180);
 const nowBtn = document.getElementById('now-btn');
 const dayRotateBtn = document.getElementById('day-rotate-btn');
 const dateStepBackBtn = document.getElementById('date-step-back');
@@ -1283,8 +1377,8 @@ function toLocalDatetimeValue(date) {
 }
 
 dateInput.value = toLocalDatetimeValue(new Date());
-latInput.value = '54.68';   // Vilnius
-lonInput.value = '25.28';
+latField.set(54.68);   // Vilnius
+lonField.set(25.28);
 
 // ── Birth place and time zone ────────────────────────────────────────────
 // The date/time field is the birth place's wall-clock time. The place picker
@@ -1306,7 +1400,7 @@ function updateTzStatus() {
 // Coordinates -> zone -> rebuild. If the lookup fails the previous zone is kept
 // and the status line says so.
 async function refreshTimeZone() {
-  const lat = parseFloat(latInput.value), lon = parseFloat(lonInput.value);
+  const lat = latField.get(), lon = lonField.get();
   if (Number.isNaN(lat) || Number.isNaN(lon)) return;
   const ticket = ++tzLookupTicket;
   placeStatus.textContent = 'Looking up the time zone…';
@@ -1318,8 +1412,8 @@ async function refreshTimeZone() {
 }
 
 function onPlaceSelected(place) {
-  latInput.value = place.lat.toFixed(4);
-  lonInput.value = place.lon.toFixed(4);
+  latField.set(place.lat);
+  lonField.set(place.lon);
   return refreshTimeZone();
 }
 initPlacePicker({ input: placeInput, list: placeList, onSelect: onPlaceSelected });
@@ -1353,8 +1447,8 @@ let daySliderCachedLon = null;
 function syncDaySlider() {
   if (!document.body.classList.contains('is-touch')) return;
   const date = readDateInput();
-  const latitude = parseFloat(latInput.value);
-  const longitude = parseFloat(lonInput.value);
+  const latitude = latField.get();
+  const longitude = lonField.get();
   if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
   const start = sliderStartTime(date);
   if (!daySliderCachedStart || daySliderCachedStart.getTime() !== start.getTime()
