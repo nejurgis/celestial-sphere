@@ -113,6 +113,8 @@ function drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBou
 
   // Egyptian bounds — 5 unequal ruled segments per sign, colored by ruler.
   if (showBounds) {
+    // Inner edge of the bounds strip (its outer edge is the sign ring's inner circle).
+    parts.push(`<circle cx="${CX}" cy="${CY}" r="${R_BOUNDS_IN}" fill="none" stroke="#999" stroke-width="0.8"/>`);
     EGYPTIAN_BOUNDS.forEach((terms, signIndex) => {
       let from = 0;
       terms.forEach(({ ruler, to }) => {
