@@ -71,17 +71,21 @@ function splitDeg(elon) {
 const text = (x, y, size, body, extra = '', fill = INK) =>
   `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="${size}" text-anchor="middle" dominant-baseline="central" fill="${fill}" ${extra}>${body}</text>`;
 
-export function renderChart2D(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, hubLines, equalWheel }) {
+export function renderChart2D(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, hubLines, equalWheel, wholeSign }) {
   REL = equalWheel && houses ? makeEqualWheelMap(houses) : null;
   try {
-    drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, hubLines });
+    drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, hubLines, wholeSign });
   } finally {
     REL = null;
   }
 }
 
-function drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, hubLines }) {
-  const ascDeg = ((asc.deg % 360) + 360) % 360;
+function drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBounds, hubLines, wholeSign }) {
+  // The wheel's anchor (9 o'clock). Normally the Ascendant's own degree; in whole
+  // sign it is the START of the Ascendant's sign — house 1 is that whole sign, its
+  // cusp is 0° and the houses are exact 30° sectors from there. (The Ascendant is
+  // then just a point inside house 1.)
+  const ascDeg = ((((wholeSign && houses) ? houses[1] : asc.deg) % 360) + 360) % 360;
   const parts = [];
 
   // ── Wheel frame: outer circle, the inner circle of the band, the hub. ──
@@ -137,18 +141,43 @@ function drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBou
 
   if (showHouses && houses) {
     for (let h = 1; h <= 12; h++) {
-      if (houses[h] == null || isAngleHouse(h)) continue;
+      if (houses[h] == null) continue;
+      // Regiomontanus: the four angles ARE cusps 1/4/7/10 and are drawn below as
+      // heavier lines. Whole sign: every cusp is a sign start; the angles are not.
+      if (!wholeSign && isAngleHouse(h)) continue;
       spoke(houses[h], 1.2);
       cuspLabel(houses[h]);
     }
   }
   angleDefs.forEach(({ key, deg }) => {
-    spoke(deg, 2.6);
-    cuspLabel(deg);
-    // The angle's name, just outside the wheel.
+    if (!wholeSign) {
+      spoke(deg, 2.6);
+      cuspLabel(deg);
+    } else {
+      // Whole sign: a point on the rim, not a house line — a short heavy tick
+      // across the outer band, labelled outside with its degree.
+      const [x1, y1] = toXY(deg, ascDeg, R_RIM);
+      const [x2, y2] = toXY(deg, ascDeg, R_OUT);
+      parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${INK}" stroke-width="2.6"/>`);
+    }
+    // The angle's name (and, in whole sign, its degree), just outside the wheel.
     const [x, y] = toXY(deg, ascDeg, R_OUT + 16);
-    const anchor = Math.abs(x - CX) < 40 ? 'middle' : x < CX ? 'end' : 'start';
-    parts.push(`<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="11" font-weight="700" text-anchor="${anchor}" dominant-baseline="central" fill="${INK}">${key}</text>`);
+    const side = Math.abs(x - CX) >= 40;
+    const anchor = !side ? 'middle' : x < CX ? 'end' : 'start';
+    const nameText = (yy) => `<text x="${x.toFixed(2)}" y="${yy.toFixed(2)}" font-size="11" font-weight="700" text-anchor="${anchor}" dominant-baseline="central" fill="${INK}">${key}`;
+    if (!wholeSign) {
+      parts.push(`${nameText(y)}</text>`);
+    } else {
+      const { d, m, sign } = splitDeg(deg);
+      const degTspans = `${d}° <tspan font-size="${FS_CUSP_SIGN}">${signGlyph(sign)}</tspan> <tspan font-size="${FS_CUSP_MIN}">${m}′</tspan>`;
+      if (side) {
+        // On the left/right there's little room sideways: name over degree.
+        parts.push(`${nameText(y - 8)}</text>`);
+        parts.push(`<text x="${x.toFixed(2)}" y="${(y + 8).toFixed(2)}" font-size="10.5" text-anchor="${anchor}" dominant-baseline="central" fill="${INK}">${degTspans}</text>`);
+      } else {
+        parts.push(`${nameText(y)} <tspan font-weight="400" font-size="10.5">${degTspans}</tspan></text>`);
+      }
+    }
   });
 
   // ── Planets. Each label lies ALONG the radial line through the planet's

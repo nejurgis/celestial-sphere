@@ -1132,7 +1132,7 @@ function renderChart2DPanel() {
   renderChart2D(chart2dSvg, {
     planets: lastState.planets.map(p => ({ ...p, motion: planetMotion(p.key, BODY_BY_KEY[p.key], natalDate).motion })),
     asc: lastState.asc, mc: lastState.mc, dsc: lastState.dsc, ic: lastState.ic,
-    houses, showHouses, showBounds, equalWheel, hubLines: chartHubLines(),
+    houses, showHouses, showBounds, equalWheel, wholeSign: system === 'whole-sign', hubLines: chartHubLines(),
   });
 }
 
@@ -1305,7 +1305,7 @@ placeInput.value = 'Vilnius, Lithuania';
 
 function updateTzStatus() {
   if (!placeStatus) return;
-  placeStatus.textContent = `${birthTz} · ${offsetLabel(birthTz, readDateInput())} on that date${tzNotice}`;
+  placeStatus.textContent = `${birthTz} · ${offsetLabel(birthTz, readDateInput())}${tzNotice}`;
 }
 
 // Coordinates -> zone -> rebuild. If the lookup fails the previous zone is kept
@@ -1318,7 +1318,7 @@ async function refreshTimeZone() {
   const tz = await fetchTimeZone(lat, lon);
   if (ticket !== tzLookupTicket) return; // superseded by a newer lookup
   if (tz && isValidTz(tz)) { birthTz = tz; tzNotice = ''; }
-  else tzNotice = ' — couldn’t detect the zone for these coordinates, kept the previous one';
+  else tzNotice = ' (zone not detected)';
   rebuild();
 }
 
