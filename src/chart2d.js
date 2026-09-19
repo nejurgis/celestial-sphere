@@ -23,9 +23,8 @@ const R_RIM = 200;          // inner circle of the outer band (cusp labels live 
 const R_HUB = 78;           // centre hub
 const R_CUSP_LABEL = 216;   // middle of the outer band
 const R_BOUNDS_IN = 178, R_BOUNDS_LABEL = 189; // Egyptian bounds strip, just inside the rim
-const R_PLANET_OUT = 170;   // outer end of a planet label (its glyph)
-const LEVEL_STEP = 52;      // radial step for a planet bunched with a neighbour
-const FS_DIGIT = 10.5, FS_SIGN = 13, FS_GLYPH = 18, FS_CUSP = 11.5, FS_CUSP_SIGN = 14;
+const R_PLANET_OUT = 166;   // radius of a planet label's glyph (its outermost item)
+const FS_DIGIT = 11, FS_MIN = 8, FS_SIGN = 13, FS_GLYPH = 18, FS_CUSP = 11.5, FS_CUSP_MIN = 8.5, FS_CUSP_SIGN = 14; // minutes are set smaller than degrees
 
 // Equal-wheel mode: houses drawn as equal 30° sectors bounded by the real
 // Regiomontanus cusps; every ecliptic longitude is mapped piecewise-linearly into
@@ -129,10 +128,10 @@ function drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBou
     const [x, y] = toXY(deg, ascDeg, R_CUSP_LABEL);
     const nearTopBottom = Math.abs(y - CY) > R_CUSP_LABEL * 0.86;
     if (nearTopBottom) {
-      parts.push(`<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="middle" dominant-baseline="central" fill="${INK}" font-size="${FS_CUSP}">${d}° <tspan font-size="${FS_CUSP_SIGN}">${signGlyph(sign)}</tspan> ${m}′</text>`);
+      parts.push(`<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="middle" dominant-baseline="central" fill="${INK}" font-size="${FS_CUSP}">${d}° <tspan font-size="${FS_CUSP_SIGN}">${signGlyph(sign)}</tspan> <tspan font-size="${FS_CUSP_MIN}">${m}′</tspan></text>`);
     } else {
       parts.push(text(x, y - 7, FS_CUSP, `${d}°`));
-      parts.push(`<text x="${x.toFixed(2)}" y="${(y + 7).toFixed(2)}" text-anchor="middle" dominant-baseline="central" fill="${INK}" font-size="${FS_CUSP}"><tspan font-size="${FS_CUSP_SIGN}">${signGlyph(sign)}</tspan> ${m}′</text>`);
+      parts.push(`<text x="${x.toFixed(2)}" y="${(y + 7).toFixed(2)}" text-anchor="middle" dominant-baseline="central" fill="${INK}" font-size="${FS_CUSP}"><tspan font-size="${FS_CUSP_SIGN}">${signGlyph(sign)}</tspan> <tspan font-size="${FS_CUSP_MIN}">${m}′</tspan></text>`);
     }
   };
 
@@ -152,56 +151,103 @@ function drawChart(svg, { planets, asc, mc, dsc, ic, houses, showHouses, showBou
     parts.push(`<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-size="11" font-weight="700" text-anchor="${anchor}" dominant-baseline="central" fill="${INK}">${key}</text>`);
   });
 
-  // ── Planets: glyph outermost, then degrees, sign, minutes, R/S. ──
-  // A label centred on a spoke would sit on top of the line, so (like the
-  // printed wheel) push it to the side of the nearest spoke, staying in its house.
+  // ── Planets. Each label lies ALONG the radial line through the planet's
+  // angle (an invisible spoke toward the centre): glyph outermost, then degrees,
+  // sign, minutes, R/S, each item stepped inward just far enough not to touch
+  // the previous one — so on the left/right the label reads as a horizontal row,
+  // on the top/bottom as a vertical stack, and diagonally in between. Planets that
+  // would overlap (a stellium) are spread apart in ANGLE instead of being piled
+  // inward. ──
   const spokeRels = (showHouses && houses ? Object.values(houses) : angleDefs.map(a => a.deg)).map(d => relOf(d, ascDeg));
-  const SPOKE_MARGIN = 6; // wheel degrees (~18 px at the planets' radius)
+  const SPOKE_MARGIN = 7; // wheel degrees: keep a label's line off a house spoke
   const clearOfSpokes = rel => {
     for (const sr of spokeRels) {
-      const delta = ((rel - sr + 540) % 360) - 180; // signed distance from that spoke
+      const delta = ((rel - sr + 540) % 360) - 180;
       if (Math.abs(delta) < SPOKE_MARGIN) return rel + (delta >= 0 ? 1 : -1) * (SPOKE_MARGIN - Math.abs(delta));
     }
     return rel;
   };
+
+  // Approximate size of each item (px) — used only to space them and their neighbours.
+  const ITEM = {
+    glyph: { w: 18, h: 18 }, deg: { w: 17, h: 12 }, sign: { w: 13, h: 13 }, min: { w: 13, h: 10 }, flag: { w: 9, h: 11 },
+  };
+  const items = p => {
+    const { d, m, sign } = splitDeg(p.elon);
+    const flag = p.motion === 'retrograde' ? 'R' : p.motion === 'stationary' ? 'S' : '';
+    const list = [
+      { kind: 'glyph', body: PLANET_GLYPHS[p.key] ?? p.key[0], size: FS_GLYPH },
+      { kind: 'deg', body: `${d}°`, size: FS_DIGIT },
+      { kind: 'sign', body: signGlyph(sign), size: FS_SIGN },
+      { kind: 'min', body: `${m}′`, size: FS_MIN },
+    ];
+    if (flag) list.push({ kind: 'flag', body: flag, size: FS_MIN, bold: true });
+    return list;
+  };
+
   const placed = planets
     .map(p => ({ ...p, rel: clearOfSpokes(relOf(p.elon, ascDeg)) }))
     .sort((a, b) => a.rel - b.rel);
-  let lastRel = null, level = 0;
-  placed.forEach(p => {
-    level = lastRel != null && p.rel - lastRel < 8 ? level + 1 : 0;
-    lastRel = p.rel;
-    const rOut = R_PLANET_OUT - level * LEVEL_STEP;
-    const [x, y] = xyRel(p.rel, rOut);
-    const { d, m, sign } = splitDeg(p.elon);
-    const flag = p.motion === 'retrograde' ? 'R' : p.motion === 'stationary' ? 'S' : '';
-    const glyph = PLANET_GLYPHS[p.key] ?? p.key[0];
-    const horizontal = Math.abs(Math.cos(((180 - p.rel) * Math.PI) / 180)) > 0.8;
 
-    if (horizontal) {
-      // One line reading inward from the glyph: on the left it runs left→right,
-      // on the right the order is mirrored so the glyph stays outermost.
-      const onLeft = x < CX;
-      const seq = [[glyph, FS_GLYPH, false], [`${d}°`, FS_DIGIT, false], [signGlyph(sign), FS_SIGN, false], [`${m}′`, FS_DIGIT, false]];
-      if (flag) seq.push([flag, FS_DIGIT, true]);
-      const ordered = onLeft ? seq : [...seq].reverse();
-      const body = ordered.map(([b, size, bold], i) => `<tspan${i ? ' dx="4"' : ''} font-size="${size}"${bold ? ' font-weight="700"' : ''}>${b}</tspan>`).join('');
-      parts.push(`<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${onLeft ? 'start' : 'end'}" dominant-baseline="central" fill="${INK}" font-size="${FS_DIGIT}">${body}</text>`);
-    } else {
-      // A vertical stack reading inward from the glyph (down in the top half of
-      // the wheel, up in the bottom half).
-      const inward = y < CY ? 1 : -1;
-      const lines = [
-        [`${d}°`, FS_DIGIT, 0], [signGlyph(sign), FS_SIGN, 0], [`${m}′`, FS_DIGIT, 0],
-      ];
-      if (flag) lines.push([flag, FS_DIGIT, 1]);
-      parts.push(text(x, y, FS_GLYPH, glyph));
-      let cursor = y + inward * 17;
-      lines.forEach(([body, size, bold]) => {
-        parts.push(text(x, cursor, size, body, bold ? 'font-weight="700"' : ''));
-        cursor += inward * (size > 12 ? 14 : 12);
-      });
+  // Spread bunched planets apart by angle. The room a label needs sideways is its
+  // height when it runs horizontally and its width when it runs vertically.
+  const R_MID = R_PLANET_OUT - 40;
+  const minGap = rel => {
+    const phi = ((180 - rel) * Math.PI) / 180;
+    const cross = Math.abs(Math.cos(phi)) * 20 + Math.abs(Math.sin(phi)) * 26 + 3;
+    return (cross / R_MID) * (180 / Math.PI);
+  };
+  const spread = () => {
+    if (placed.length < 2) return;
+    // Start the run just after the widest empty stretch, so the circle can be
+    // treated as a line; then find the positions closest to the true ones that
+    // keep every neighbour at least its minimum gap apart (isotonic regression
+    // on the gap-adjusted angles, pool-adjacent-violators). Order is preserved.
+    const n = placed.length;
+    let start = 0, widest = -1;
+    for (let i = 0; i < n; i++) {
+      const gap = (((placed[(i + 1) % n].rel - placed[i].rel) % 360) + 360) % 360 || 360;
+      if (gap > widest) { widest = gap; start = (i + 1) % n; }
     }
+    const order = Array.from({ length: n }, (_, k) => placed[(start + k) % n]);
+    const raw = [];
+    order.forEach((pl, k) => raw.push(k === 0 ? pl.rel : raw[k - 1] + ((((pl.rel - order[k - 1].rel) % 360) + 360) % 360)));
+    const need = [0];
+    for (let k = 1; k < n; k++) need.push(need[k - 1] + minGap((raw[k] + raw[k - 1]) / 2));
+    if (need[n - 1] < 360 - minGap(raw[0])) {
+      const target = raw.map((r, k) => r - need[k]);
+      const blocks = []; // pool adjacent violators: non-decreasing fit to `target`
+      target.forEach(v => {
+        blocks.push({ sum: v, count: 1 });
+        while (blocks.length > 1 && blocks[blocks.length - 2].sum / blocks[blocks.length - 2].count > blocks[blocks.length - 1].sum / blocks[blocks.length - 1].count) {
+          const last = blocks.pop(), prev = blocks.pop();
+          blocks.push({ sum: prev.sum + last.sum, count: prev.count + last.count });
+        }
+      });
+      let k = 0;
+      blocks.forEach(bl => { for (let c = 0; c < bl.count; c++, k++) order[k].rel = (((bl.sum / bl.count + need[k]) % 360) + 360) % 360; });
+    }
+  };
+  // Alternate the two constraints (stay off the spokes / stay clear of each other).
+  for (let pass = 0; pass < 4; pass++) {
+    placed.forEach(pl => { pl.rel = clearOfSpokes(pl.rel); });
+    placed.sort((a, b) => a.rel - b.rel);
+    spread();
+    placed.sort((a, b) => a.rel - b.rel);
+  }
+
+  placed.forEach(p => {
+    const phi = ((180 - p.rel) * Math.PI) / 180;
+    const ux = Math.cos(phi), uy = Math.sin(phi); // outward unit vector
+    const list = items(p);
+    let r = R_PLANET_OUT;
+    list.forEach((item, i) => {
+      if (i > 0) {
+        const prev = ITEM[list[i - 1].kind], cur = ITEM[item.kind];
+        r -= Math.abs(ux) * ((prev.w + cur.w) / 2 + 2) + Math.abs(uy) * ((prev.h + cur.h) / 2 + 1);
+      }
+      parts.push(text(CX + r * ux, CY + r * uy, item.size, item.body, item.bold ? 'font-weight="700"' : ''));
+    });
   });
 
   // ── Hub: date, time, UTC offset and place. ──
