@@ -203,7 +203,7 @@
         position: absolute; top: 16px; left: 0; right: 0; margin: 0 auto; z-index: 20;
         background: rgba(255,255,255,0.97); border: 1px solid #d8d8d8; border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0,0,0,0.18); backdrop-filter: blur(8px);
-        width: min(760px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+        width: min(860px, 94vw); max-height: 82vh; display: flex; flex-direction: column;
       }
       /* #table-panel's own `display: flex` above (specificity 1-0-0) otherwise
          beats the browser's default `[hidden]{display:none}` (0-1-0), so the
@@ -212,13 +212,25 @@
       .table-panel-header {
         display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #e5e5e5;
       }
-      .table-panel-header h2 { font-size: 0.9rem; margin: 0; flex: 1; }
+      .table-panel-header h2 { font-size: 0.9rem; margin: 0; flex: 1; white-space: nowrap; }
+      .table-panel-header button, .table-panel-header label { white-space: nowrap; }
+      .table-panel-header { flex-wrap: wrap; }
       .table-panel-header label { font-size: 0.78rem; color: #666; display: flex; align-items: center; gap: 5px; }
+      .table-panel-header select { padding: 5px 6px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.8rem; background: #fff; }
       .table-panel-header input[type=number] { width: 60px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 6px; }
       .table-panel-header button { padding: 6px 10px; border: none; border-radius: 6px; background: #2f6fb0; color: #fff; font-weight: 600; cursor: pointer; }
       .table-scroll { overflow-y: auto; padding: 0 16px 16px; }
-      #table-panel table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-      #table-panel th { position: sticky; top: 0; background: #fff; text-align: left; padding: 8px 6px; border-bottom: 2px solid #ddd; color: #666; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+      #table-panel table { width: 100%; border-collapse: collapse; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+      /* Reference-table layout: aspect glyph, planet, then a grey Dxt./Sst. tag;
+         positions as "02° ♋ 27′". */
+      #table-panel td .asp { display: inline-block; width: 1.5em; }
+      #table-panel td .pt, #table-panel td.pt { font-size: 1.1em; }
+      #table-panel td .pt { display: inline-block; min-width: 1.6em; }
+      #table-panel .lord-dot { color: #2f7d4f; font-size: 0.75em; vertical-align: middle; }
+      #table-panel td .side { color: #9a9a9a; font-size: 0.86em; margin-left: 4px; }
+      #table-panel td .zs { display: inline-block; width: 1.3em; text-align: center; font-size: 1.1em; }
+      #table-panel tr.next-up td { border-top: 2px solid #2f6fb0; }
+      #table-panel th { position: sticky; top: 0; background: #fff; text-align: left; padding: 10px 8px; border-bottom: 2px solid #ddd; color: #222; font-size: 0.9rem; font-weight: 700; white-space: nowrap; }
       #table-panel th .help {
         position: relative; display: inline-flex; align-items: center; justify-content: center;
         width: 13px; height: 13px; border-radius: 50%; background: #d8dde3; color: #666;
@@ -234,7 +246,7 @@
         opacity: 0; pointer-events: none; transition: opacity 0.1s;
       }
       #table-panel th .help:hover::after { opacity: 1; }
-      #table-panel td { padding: 6px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+      #table-panel td { padding: 11px 8px; border-bottom: 1px solid #ececec; white-space: nowrap; }
       #table-panel tr.type-c td:nth-child(5) { color: #a8321e; }
       #table-panel tr.type-d td:nth-child(5) { color: #2f6fb0; }
       #table-panel tr.type-b { color: #5a3fa0; }
@@ -321,6 +333,24 @@
       #year-body th { text-align: left; color: #777; font-weight: 600; padding: 2px 6px; }
       #year-body td { padding: 2px 6px; border-top: 1px solid #f0f0f0; }
       #year-body tr.yv-now td { background: #fff4d6; font-weight: 700; }
+      #year-body tr.kd-pd td, #year-body tr.kd-pd td * { color: #c0392b; }
+      #year-body .kd-pd-note { font-size: 0.85em; font-weight: 600; margin-top: 2px; }
+      #year-body .kd-pd-key { color: #c0392b; font-weight: 600; }
+      #year-body .kd-house { text-align: center; white-space: nowrap; width: 4.5em; }
+      #year-body .kd-red { color: #c0392b; }
+      #year-body .kd-green { color: #2f7d4f; }
+      #year-body tr.kd-chapter td { font-weight: 700; background: #f6f6f6; }
+      #year-body tr.kd-sr td { font-weight: 700; }
+      #year-body tr.kd-transit td { color: #2f6fb0; }
+      #year-body .kd-pos { color: #999; font-size: 0.9em; }
+      #year-body tr.next-up td { border-top: 2px solid #2f6fb0; }
+      #year-body .kd-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      #year-body .kd-nav > span, #year-body .kd-nav label { white-space: nowrap; }
+      #year-body .kd-only { margin-left: auto; font-size: 0.8rem; color: #666; display: flex; align-items: center; gap: 4px; }
+      #year-body .kd-houses { margin-left: 8px; font-size: 0.8rem; color: #666; }
+      #year-body .kd-houses select { margin-left: 4px; padding: 2px 4px; border: 1px solid #ddd; border-radius: 6px; }
+      #year-body .yv-keydates { margin-left: 8px; font-size: 0.78rem; padding: 2px 8px; }
+      #year-body .yv-date { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
       #year-body .yv-note { margin-top: 8px; color: #888; font-size: 0.76rem; }
       #table-body tr[data-i] { cursor: pointer; }
       #table-body tr[data-i]:hover td { filter: brightness(0.94); }
@@ -455,6 +485,8 @@
         <label class="primary-directions-only"><input type="checkbox" id="layer-positionCircle" checked> Selected mundane position</label>
         <label class="primary-directions-only"><input type="checkbox" id="layer-direction" checked> Directional arc</label>
         <button id="table-toggle-btn" type="button" class="primary-directions-only" title="List every direction (all promissors, all significators, all aspects) chronologically">☰ Directions table</button>
+        <button id="closest-toggle-btn" type="button" class="primary-directions-only" title="The directions nearest today's date: the last few that perfected and the next few coming">◎ Closest directions</button>
+        <button id="keydates-toggle-btn" type="button" class="primary-directions-only" title="Benjamin Dykes's key dates for the current solar year: the solar return Ascendant directed through the profected sign's whole-sign angles and to the lord of the year">🗝 Key dates of the year</button>
         <button id="chart2d-toggle-btn" type="button" title="Traditional 2D chart wheel">◐ 2D chart</button>
       </div>
 
@@ -510,6 +542,7 @@
             <option value="DSC">Descendant</option>
             <option value="MC">Midheaven</option>
             <option value="IC">Imum Coeli</option>
+            <option value="Fortune">⊗ Part of Fortune</option>
           </select>
         </div>
         <div class="transport">
@@ -567,9 +600,33 @@
 
       <div id="table-panel" hidden>
         <div class="table-panel-header">
-          <h2>Directions — chronological</h2>
-          <label>Min age <input id="table-min-years" type="number" value="0" min="0" max="1000" step="10"> yrs</label>
-          <label>Max age <input id="table-max-years" type="number" value="150" min="1" max="1000" step="10"> yrs</label>
+          <h2 id="table-title">Directions — chronological</h2>
+          <button id="table-closest-btn" type="button" title="Show only the directions nearest today's date: the last few that perfected and the next few coming">Closest to today</button>
+          <select id="table-sig-filter" title="Show only the directions to one significator. House cusps (Regiomontanus) and the Part of Fortune receive directions but are never directed themselves.">
+            <option value="">All Planets and Angles</option>
+            <option value="Sun">The Sun</option>
+            <option value="Moon">The Moon</option>
+            <option value="Mercury">Mercury</option>
+            <option value="Venus">Venus</option>
+            <option value="Mars">Mars</option>
+            <option value="Jupiter">Jupiter</option>
+            <option value="Saturn">Saturn</option>
+            <option value="ASC">ASC</option>
+            <option value="C2">Cusp 2</option>
+            <option value="C3">Cusp 3</option>
+            <option value="IC">IC</option>
+            <option value="C5">Cusp 5</option>
+            <option value="C6">Cusp 6</option>
+            <option value="DSC">DSC</option>
+            <option value="C8">Cusp 8</option>
+            <option value="C9">Cusp 9</option>
+            <option value="MC">MC</option>
+            <option value="C11">Cusp 11</option>
+            <option value="C12">Cusp 12</option>
+            <option value="Fortune">Pars of Fortune</option>
+          </select>
+          <label>Min age <input id="table-min-years" type="number" value="0" min="0" max="101" step="10"> yrs</label>
+          <label>Max age <input id="table-max-years" type="number" value="101" min="1" max="101" step="10"> yrs</label>
           <label><input id="table-bounds" type="checkbox" checked> Bound changes</label>
           <button id="table-recompute-btn" type="button">Recompute</button>
           <span id="table-status" class="muted"></span>

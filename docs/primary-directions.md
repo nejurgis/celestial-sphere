@@ -94,6 +94,9 @@ find. Tolerance 3 months (the publications give a month).
 | Source | Rows | Result |
 |---|---|---|
 | Textbook Ex. 35, Tables 3.9/3.10 (12:15 and 12:16) | 13 + 8 | all within 1 month |
+| Textbook Figs 3.1 / 3.11 cusps, p.389 control rows | 8 cusps + 2 | cusps < 1′; Mars △ → Jupiter Jul 2001 ✓; Mars ☍ → Moon is Apr 2018 vs the book's Apr 2019 (known miss, likely a year slip) |
+| Textbook Table 3.10 (birth times 12:13…12:17) | 40 cells | 30 exact, all within 1 month |
+| Textbook Ex. 36, Venus return chart (Fig. 3.13, Table 3.11) | 4 cusps + 4 arcs | cusps < 1′; all four arcs exact (303.21° / 54.48° / 172.00° / 174.90°), days within 1 |
 | Queen Elizabeth II (thematic-directions post) | 6, incl. 3 to the 5th-house cusp | all within 1 month; 8 cusps < 1′ |
 | Diana (blog) | 3 of 4; 4 cusps < 1′ | Saturn☍→Mercury, Jupiter☍→Mercury, Sun□→Jupiter ✓ |
 | William (blog) | 0 of 1 | shortest-path converse, §6 |
@@ -437,6 +440,60 @@ Choices and limits:
 - `verify-directions.mjs` checks the definition (Sun/Moon at the returns equal their
   natal longitudes; profected sign steps one per year), not published dates — none of
   the sources tabulates returns for the example charts.
+
+## Directions table: Part of Fortune, age cap, closest view
+
+- **Part of Fortune** (`⊗`, key `Fortune`) is a significator only, never directed itself:
+  `Asc + Moon − Sun` on the ecliptic (latitude 0), the same by day and by night
+  (Ptolemy's and Morin's form). It matches the ⊗ printed in the textbook's charts
+  (9°59′ Tau in Fig. 3.1, 21°50′ Cap in Fig. 3.13 — the latter is checked in
+  `verify-directions.mjs`); both are day charts, so the book does not settle whether its
+  author reverses the formula at night.
+- **Nothing past age 101** is listed (`MAX_DIRECTION_AGE` in `main.js`).
+- **Closest directions** (sidebar button, or "Closest to today" in the table header):
+  the 12 rows before and the 12 after today's date, a blue rule marking the next one.
+- **Significator filter** in the table header: all planets and angles (default; includes
+  the Part of Fortune), or one planet, angle, intermediate cusp (2, 3, 5, 6, 8, 9, 11, 12 —
+  Regiomontanus, as a zodiac degree at latitude 0) or the Part of Fortune. Cusps are
+  computed only when picked. Bound-change rows are hidden while a filter is on.
+- Row layout follows the reference tables: aspect glyph, planet, grey `Dxt.`/`Sst.`;
+  position as `02° ♋ 27′`; arc as `27° 48′`; date as `1997 Nov 14`.
+
+## Directions inside a return chart
+
+Textbook Example №36 (pp.391–394): a return chart is read as a radix for the cycle it
+opens, and the same Regiomontanus directions are computed in it. Two differences from
+natal directions: the arc is always the **direct** one, 0…360° (no converse swap), and
+the whole turn stands for the whole cycle, so `days = arc / 360 × (next return − this
+return)` instead of Naibod's key. Code: `computeReturnDirections` in `src/astro.js`
+(`directOnly` + `periodDays` options of `computeAllDirections`). In the app: the Year
+view lists, for the solar return of that year, the direction's promissor with all its
+aspects carried to the direction's significator, to itself and to the return's Asc/MC
+(the book's choice of significators), the row nearest the perfection date highlighted.
+Verified against Table 3.11 (Venus return: 303.21° / 54.48° / 172.00° / 174.90°, days
+248 / 44 / 140 / 142). Only the solar return is wired into the UI; the function takes
+any return date and period (the book's own example is a Venus return). Return charts
+are cast for the birthplace.
+
+## Key dates of the solar year (Dykes)
+
+From Benjamin Dykes's *Revolutions* workshop (2013): the solar return Ascendant is
+directed once around the zodiac in the year, by the ascensions of the signs at the
+birthplace (360 ascension units = return to return). `computeKeyDates` in `astro.js`
+lists, as he recommends:
+- **chapters** — the periods the directed Ascendant spends in the sign of the profection
+  and the signs square and opposite it;
+- **days** — the directed Ascendant reaching the lord of the year's ☌ □ △ ☍ from its return
+  and its natal position, ⚹ only where it lands in one of those four signs (he finds
+  events within 1–2 days);
+- **transits** — the lord entering one of the four signs, and its stations (skipped when
+  the Sun or Moon is lord, the Persian rule he follows).
+
+Exact oblique ascensions per degree (as in Delphic Oracle) rather than his whole-sign
+table; his worked sign-entry dates are reproduced within 1–2 days in
+`verify-directions.mjs`. Sidebar: "🗝 Key dates of the year" (◀ ▶ for other years);
+also from any Year view. In the directions table a green ● marks the lord of the year
+(at the row's perfection date) where it is promissor or significator.
 
 ## Angles as promissors
 

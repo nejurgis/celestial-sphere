@@ -6,7 +6,9 @@
 //  * Predictive Astrology Textbook, Example №35 (native 1976-11-29, UTC+3):
 //    Table 3.9 gives forecasts at the official 12:15; Table 3.10's deviations
 //    give the 12:16 (rectified) ones — derived as reality + deviation, so only
-//    good to a month.
+//    good to a month. Also from the book: both charts' cusps (Figs 3.1, 3.11),
+//    the p.389 control directions, the whole Table 3.10 grid (12:13…12:17) and
+//    Example №36 (Venus return chart, Fig. 3.13 / Table 3.11) — checked below.
 //  * morinus-astrology.com/diana-death (Princess Diana, 1961-07-01 19:45 +01:00,
 //    and Prince William, 1982-06-21 21:03 +01:00): dated directions + cusps.
 //  * morinus-astrology.com/thematic-directions (Queen Elizabeth II, 1926-04-21
@@ -48,7 +50,10 @@ const DATASET = [
   {
     name: 'Example 35 (Borealis)',
     lat: 55 + 45 / 60, lon: 37 + 37 / 60,
-    times: [{ label: '12:15 local', utc: [1976, 11, 29, 9, 15] }, { label: '12:16 local', utc: [1976, 11, 29, 9, 16] }],
+    times: [
+      { label: '12:15 local', utc: [1976, 11, 29, 9, 15], cusps: { 11: [17, 46], 12: [1, 11], 2: [11, 28], 3: [20, 59] } }, // Fig. 3.11
+      { label: '12:16 local', utc: [1976, 11, 29, 9, 16], cusps: { 11: [17, 59], 12: [1, 25], 2: [12, 4], 3: [21, 19] } },  // Fig. 3.1
+    ],
     rows: [
       ['Venus',  '⚹', 'sinister', 'ASC',     '2001-01', '2000-10'],
       ['Sun',    '△', 'sinister', 'Jupiter', '2002-04', '2002-03'],
@@ -63,6 +68,9 @@ const DATASET = [
       ['Mars',   '□', 'dexter',   'Mars',    '2014-12', null],
       ['Venus',  '△', 'sinister', 'Moon',    '2006-02', null],
       ['Saturn', '⚹', 'sinister', 'DSC',     '2013-02', null],
+      // p.389 "final verification" on the rectified chart
+      ['Mars',   '△', 'sinister', 'Jupiter', null, '2001-07'],
+      ['Mars',   '☍', null,       'Moon',    null, '2019-04', { xfail: 'arc 40.78° → Apr 2018, same month one year early; probably a year slip in the book (unproven)' }],
     ],
   },
   {
@@ -106,9 +114,10 @@ for (const chart of DATASET) {
     const rows = A.computeAllDirections(keys, resolve, k => BODY[k], date, s.observer, 1, 120, { includeBoundCrossings: false, angles });
     console.log(`\n${chart.name} — ${t.label}  (ASC ${A.formatEclipticDegree(s.asc.deg)}, MC ${A.formatEclipticDegree(s.mc.deg)})`);
 
-    if (chart.cusps) {
+    const bookCusps = t.cusps ?? chart.cusps;
+    if (bookCusps) {
       const cusps = A.computeRegiomontanusHouses(date, s.observer, angles);
-      for (const [h, [d, m]] of Object.entries(chart.cusps)) {
+      for (const [h, [d, m]] of Object.entries(bookCusps)) {
         const want = SIGN_START(cusps[h]) + d + m / 60, err = cusps[h] - want;
         const ok = Math.abs(err) <= CUSP_TOLERANCE_DEG;
         if (!ok) worst = Infinity;
@@ -132,6 +141,87 @@ for (const chart of DATASET) {
     }
   });
 }
+// ── Textbook Table 3.10: rectification grid ──────────────────────────────────
+// Deviation (forecast − reality, whole months) of the eight Table 3.9 events for
+// birth times 12:13…12:17. The book rounds to months, so allow 1.
+{
+  const EVENTS = [ // [promissor, glyph, dir, significator, reality 'YYYY-MM']
+    ['Venus', '⚹', 'sinister', 'ASC', '2000-12'], ['Sun', '△', 'sinister', 'Jupiter', '2002-10'],
+    ['Saturn', '⚹', 'sinister', 'MC', '2002-10'], ['Saturn', '⚹', 'sinister', 'Sun', '2003-05'],
+    ['Sun', '△', 'sinister', 'ASC', '2004-09'], ['Sun', '△', 'sinister', 'Venus', '2008-04'],
+    ['Saturn', '△', 'dexter', 'Venus', '2016-01'], ['Venus', '△', 'sinister', 'ASC', '2019-05'],
+  ];
+  const BOOK = {
+    13: [7, -5, -1, 4, 10, -2, 2, 8], 14: [4, -6, 1, 3, 7, -2, 2, 5], 15: [1, -6, 2, 2, 3, -2, 2, 2],
+    16: [-2, -7, 3, 1, 0, -2, 3, -1], 17: [-5, -8, 4, 0, -3, -2, 3, -4],
+  };
+  const lat = 55 + 45 / 60, lon = 37 + 37 / 60;
+  console.log('\nTextbook Table 3.10 — deviation in months per birth time (book / app)');
+  let gridWorst = 0;
+  for (const [min, book] of Object.entries(BOOK)) {
+    const date = new Date(Date.UTC(1976, 10, 29, 9, Number(min)));
+    const s = A.computeSkyState(date, lat, lon);
+    const angles = { mc: s.mc, ic: s.ic, asc: s.asc, dsc: s.dsc }, ang = { ASC: s.asc, DSC: s.dsc, MC: s.mc, IC: s.ic };
+    const resolve = k => BODY[k] ? { key: k, body: BODY[k] } : { key: k, ra: ang[k].ra, dec: ang[k].dec };
+    const rows = A.computeAllDirections(KEYS, resolve, k => BODY[k], date, s.observer, 1, 120, { includeBoundCrossings: false, angles });
+    const app = EVENTS.map(([p, g, dir, sig, real]) => {
+      const r = rows.find(x => x.promissorKey === p && x.aspectGlyph === g && (x.aspectDir ?? 'sinister') === dir && x.significatorKey === sig);
+      const [y, m] = real.split('-').map(Number);
+      return (r.date.getUTCFullYear() - y) * 12 + (r.date.getUTCMonth() + 1 - m);
+    });
+    const off = Math.max(...app.map((v, i) => Math.abs(v - book[i])));
+    gridWorst = Math.max(gridWorst, off);
+    console.log(`  12:${min}  [${book.join(', ')}]  /  [${app.join(', ')}]  ${off <= 1 ? 'ok' : 'FAIL'}`);
+  }
+  if (gridWorst > 1) worst = Infinity;
+}
+
+// ── Textbook Example №36: directions inside the Venus return chart ───────────
+// Fig. 3.13 (1976 native's Venus return, 2019-02-19 10:59:58 UTC, 55°46′N 37°52′E)
+// and Table 3.11: Venus's sinister trine directed to ASC / MC / Venus / Saturn,
+// through computeReturnDirections (direct arcs 0…360°, 360° = the 294-day cycle).
+{
+  const date = new Date(Date.UTC(2019, 1, 19, 10, 59, 58));
+  const next = new Date(date.getTime() + 294 * 86400000); // the book's round figure
+  const R = A.computeReturnDirections(date, next, 55 + 46 / 60, 37 + 52 / 60);
+  console.log(`\nTextbook Example 36 — Venus return chart  (ASC ${A.formatEclipticDegree(R.sky.asc.deg)}, MC ${A.formatEclipticDegree(R.sky.mc.deg)})`);
+  for (const [h, [d, m]] of Object.entries({ 11: [3, 48], 12: [25, 42], 2: [12, 29], 3: [28, 44] })) {
+    const err = R.cusps[h] - (SIGN_START(R.cusps[h]) + d + m / 60), ok = Math.abs(err) <= CUSP_TOLERANCE_DEG;
+    if (!ok) worst = Infinity;
+    console.log(`  cusp ${String(h).padStart(2)}: book ${d}°${String(m).padStart(2, '0')}′  app ${A.formatEclipticDegree(R.cusps[h])}  (${(err * 60).toFixed(1)}′) ${ok ? 'ok' : 'FAIL'}`);
+  }
+  { // ⊗ printed in Fig. 3.13: 21°50′ Capricorn
+    const err = R.sky.fortune.deg - (270 + 21 + 50 / 60), ok = Math.abs(err) <= 0.05;
+    if (!ok) worst = Infinity;
+    console.log(`  Part of Fortune: book 21°50′ Cap  app ${A.formatEclipticDegree(R.sky.fortune.deg)}  (${(err * 60).toFixed(1)}′) ${ok ? 'ok' : 'FAIL'}`);
+  }
+  for (const [sig, want, days] of [['ASC', 303.21, 248], ['MC', 54.48, 44], ['Venus', 172.0, 140], ['Saturn', 174.9, 142]]) {
+    const d = R.rows.find(x => x.promissorKey === 'Venus' && x.aspectGlyph === '△' && x.aspectDir === 'sinister' && x.significatorKey === sig);
+    const ok = d && !d.swapped && Math.abs(d.arcDeg - want) <= 0.05 && Math.abs(d.days - days) <= 1;
+    if (!ok) worst = Infinity;
+    console.log(`  Venus △ → ${sig.padEnd(6)} book ${want.toFixed(2).padStart(6)}° ${days} d   app ${d.arcDeg.toFixed(2).padStart(6)}° ${d.days.toFixed(1)} d  ${d.date.toISOString().slice(0, 10)}  ${ok ? 'ok' : 'FAIL'}`);
+  }
+}
+
+// ── Dykes, Revolutions workshop 2013: the directed solar-return Ascendant ─────
+// His worked example (45°N, latitude 44.5°): dates the SR Ascendant enters each
+// sign. He uses whole-sign ascension tables (+1 day every other sign) and gives
+// the Ascendant only to the degree, so allow 2 days.
+{
+  console.log('\nDykes 2013 — directed solar-return Ascendant, sign entries');
+  for (const [label, srUtc, ascLon, rows] of [
+    ['age 26, ASC 11° Leo', [2011, 5, 29, 12], 131, [[150, '2011-07-24'], [180, '2011-09-01'], [210, '2011-10-11'], [270, '2011-12-27'], [300, '2012-01-24'], [0, '2012-03-02'], [30, '2012-03-19']]],
+    ['age 27, ASC 17° Lib', [2012, 5, 28, 12], 197, [[210, '2012-07-14'], [240, '2012-08-24'], [300, '2012-10-28'], [330, '2012-11-17'], [30, '2012-12-21'], [60, '2013-01-10'], [120, '2013-03-17'], [150, '2013-04-26']]],
+  ]) {
+    const sr = new Date(Date.UTC(...srUtc));
+    const days = A.ascendantDistributionDays(sr, ascLon, 44.5, 365.2422);
+    const errs = rows.map(([lon, want]) => Math.round((sr.getTime() + days(lon) * 86400000 - Date.parse(want + 'T12:00Z')) / 86400000));
+    const ok = errs.every(e => Math.abs(e) <= 2);
+    if (!ok) worst = Infinity;
+    console.log(`  ${label}: days off [${errs.join(', ')}]  ${ok ? 'ok' : 'FAIL'}`);
+  }
+}
+
 // ── Morin/Holden worked example (Astrologia Gallica Book 22, Appendix 5) ──────
 // Direction of Mars to the conjunction of Jupiter in mundo, chart of Sixtus ab
 // Hemminga: RAMC 165°24′, latitude 53°N. Published: pole 47°21′, arc 25°46′

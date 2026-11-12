@@ -287,8 +287,13 @@ export function computeSkyState(date, latitude, longitude, radius = 1) {
   const ic = angleAt(mcElon + 180);
   const asc = angleAt(ascElon);
   const dsc = angleAt(ascElon + 180);
+  // Part of Fortune: Asc + Moon − Sun, the same by day and by night (Ptolemy's
+  // and Morin's form — no night reversal), taken on the ecliptic (latitude 0).
+  // Matches the ⊗ printed in the textbook's charts (9°59′ Tau, 21°50′ Cap).
+  const lonOf = key => planets.find(p => p.key === key).elon;
+  const fortune = angleAt(ascElon + lonOf('Moon') - lonOf('Sun'));
 
-  return { observer, planets, equatorPoints, eclipticPoints, poleXYZ, mc, ic, asc, dsc };
+  return { observer, planets, equatorPoints, eclipticPoints, poleXYZ, mc, ic, asc, dsc, fortune };
 }
 
 // A planet's real path across the sky over `windowDays` centered on `date`
@@ -520,7 +525,8 @@ export function computeRegiomontanusDirection(promissor, significator, natalDate
   // Book's rule (Morinus): when the promissor's path to the significator's
   // circle of position exceeds 180°, hold the promissor still and carry the
   // significator to it instead — a converse direction.
-  const swapped = direct > 180;
+  // opts.directOnly: never swap — return-chart directions run the full 360°.
+  const swapped = !opts.directOnly && direct > 180;
   const moving = swapped ? significator : promissor;
   const fixed = swapped ? promissor : significator;
   const movingEq = swapped ? sEq : pEq;
@@ -1270,7 +1276,13 @@ export const ASPECT_DEFS = [
 // "which of my houses is being activated" reading transits use.
 export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate, observer, radius = 1, maxYears = 150, opts = {}) {
   const includeBoundCrossings = opts.includeBoundCrossings ?? true;
-  const direct = (p, s, o) => computeRegiomontanusDirection(p, s, natalDate, observer, opts.angles, radius, o);
+  const direct = (p, s, o) => computeRegiomontanusDirection(p, s, natalDate, observer, opts.angles, radius, { ...o, directOnly: opts.directOnly });
+  // opts.periodDays: time the arc as a share of one return cycle (360° = the
+  // whole period) instead of by Naibod's key — see computeReturnDirections.
+  const periodDays = opts.periodDays ?? null;
+  // opts.significatorOnlyKeys: points that receive directions but are never
+  // directed themselves (the Part of Fortune).
+  const significatorKeys = [...pointKeys, ...(opts.significatorOnlyKeys ?? [])];
   const rows = [];
   for (const promissorKey of pointKeys) {
     const body = bodyOf(promissorKey);
@@ -1285,7 +1297,7 @@ export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate,
 
     for (const variant of variants) {
       let promissorPoint = basePoint;
-      let promissorElon = aspectPlane ? aspectPlane.planetElon : null;
+      let promissorElon = aspectPlane ? aspectPlane.planetElon : (angleDeg ?? null);
       if (variant.deg !== 0 && angleDeg !== undefined) {
         promissorElon = (((angleDeg + variant.deg) % 360) + 360) % 360;
         const eq = eclipticPointToEquatorial(promissorElon, 0, natalDate);
@@ -1296,19 +1308,20 @@ export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate,
         promissorElon = aspectPoint.elon;
       }
 
-      for (const significatorKey of pointKeys) {
+      for (const significatorKey of significatorKeys) {
         // A planet's own aspect point directed to its natal self is a real
         // direction (e.g. Sun's sextile approaching the Sun); only the
         // plain self-conjunction is meaningless here.
         if (significatorKey === promissorKey && variant.deg === 0) continue;
         const significatorPoint = resolvePoint(significatorKey);
         const direction = direct(promissorPoint, significatorPoint, { skipSweep: true });
-        if (direction.arcYears > maxYears) continue;
-        const date = new Date(natalDate.getTime() + direction.arcYears * 365.2422 * 86400000);
+        if (!periodDays && direction.arcYears > maxYears) continue;
+        const days = periodDays ? (direction.arcDeg / 360) * periodDays : direction.arcYears * 365.2422;
+        const date = new Date(natalDate.getTime() + days * 86400000);
         rows.push({
           kind: 'direction', significatorKey, promissorKey, aspectGlyph: variant.glyph, aspectDir: variant.dir,
           promissorElon, arcDeg: direction.arcDeg, arcYears: direction.arcYears,
-          swapped: direction.swapped, date,
+          swapped: direction.swapped, date, days,
         });
       }
     }
@@ -1334,6 +1347,31 @@ export function computeAllDirections(pointKeys, resolvePoint, bodyOf, natalDate,
 
   rows.sort((a, b) => a.arcYears - b.arcYears);
   return rows;
+}
+
+// ── Directions inside a return chart ─────────────────────────────────────────
+// Textbook Example №36: a return (revolution) chart is treated as a radix for
+// the cycle it opens. The same Regiomontanus directions are computed in it, but
+// the whole turn of the sphere (360°) stands for the whole cycle, so
+//   days after the return = arc / 360 × (next return − this return)
+// and the arc is always the direct one, 0…360° (no converse swap). Checked
+// against the book's Table 3.11 in scripts/verify-directions.mjs.
+// Returns { sky, angles, cusps, periodDays, rows } — rows as computeAllDirections,
+// sorted by date, each with `days`.
+export const RETURN_POINT_KEYS = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'ASC', 'MC', 'DSC', 'IC'];
+export function computeReturnDirections(returnDate, nextReturnDate, latitude, longitude, pointKeys = RETURN_POINT_KEYS) {
+  const sky = computeSkyState(returnDate, latitude, longitude);
+  const angles = { mc: sky.mc, ic: sky.ic, asc: sky.asc, dsc: sky.dsc };
+  const bodyOf = key => PLANETS.find(p => p.key === key)?.body;
+  const resolvePoint = key => {
+    const body = bodyOf(key);
+    return body ? { key, body } : { key, ra: angles[key.toLowerCase()].ra, dec: angles[key.toLowerCase()].dec };
+  };
+  const periodDays = (nextReturnDate.getTime() - returnDate.getTime()) / 86400000;
+  const rows = computeAllDirections(pointKeys, resolvePoint, bodyOf, returnDate, sky.observer, 1, Infinity,
+    { includeBoundCrossings: false, angles, directOnly: true, periodDays });
+  rows.sort((a, b) => a.days - b.days);
+  return { sky, angles, cusps: computeRegiomontanusHouses(returnDate, sky.observer, angles), periodDays, rows };
 }
 
 // ── Year view: solar return, annual/monthly profection, lunar return ────────
@@ -1404,9 +1442,105 @@ export function computeYearView(natalDate, latitude, longitude, targetDate, nata
 
   return {
     ageYears, completedYears: k, sr, nextSr,
+    keyDates: k > 0 ? computeKeyDates(natalDate, sr, nextSr, latitude, longitude, profectedSign) : null,
+    // Directions inside the solar return chart (360° = this solar year).
+    returnDirections: k > 0 ? computeReturnDirections(sr, nextSr, latitude, longitude).rows : [],
     srAsc: srSky?.asc?.deg ?? null, srMc: srSky?.mc?.deg ?? null,
     profection: { house: (k % 12) + 1, signIndex: profectedSign, lord: SIGN_RULERS[profectedSign] },
     months, activeMonth,
     lunarReturn: nearestLunarReturn(natalDate, targetDate),
   };
+}
+
+// ── Key dates of the solar year (Benjamin Dykes, Revolutions workshop 2013) ──
+// The solar return Ascendant is directed once around the zodiac during the
+// year, at the rate of the signs' ascensions at the birthplace: 360 ascension
+// units = the whole solar year (Dykes's "one year = one turn", with exact
+// oblique ascensions per degree as in Delphic Oracle rather than his whole-sign
+// table — within a day of it). Reported, as he recommends:
+//  * chapters: the periods the directed Ascendant spends in the sign of the
+//    profection and the signs square and opposite it (its whole-sign angles);
+//  * days: the directed Ascendant reaching the lord of the year's conjunction,
+//    squares, trines and opposition — from both its solar-return and its natal
+//    position — and its sextiles only where they fall in one of the four signs
+//    (events within ~1–2 days);
+//  * transits: the lord of the year entering one of the four signs and its
+//    stations. Not for the Sun or Moon as lords (Persian rule he follows).
+// Checked against his worked dates in scripts/verify-directions.mjs.
+const KEY_ASPECTS = [
+  { deg: 0, glyph: '☌' }, { deg: 90, glyph: '□' }, { deg: -90, glyph: '□' }, { deg: 120, glyph: '△' },
+  { deg: -120, glyph: '△' }, { deg: 180, glyph: '☍' }, { deg: 60, glyph: '⚹' }, { deg: -60, glyph: '⚹' },
+];
+
+// Days after the return at which the directed Ascendant reaches each ecliptic longitude.
+export function ascendantDistributionDays(srDate, srAscDeg, latitude, yearDays) {
+  const rad = Math.PI / 180;
+  const oa = lon => {
+    const e = eclipticPointToEquatorial(lon, 0, srDate);
+    const x = Math.max(-1, Math.min(1, Math.tan(e.dec * rad) * Math.tan(latitude * rad)));
+    return e.ra * 15 - Math.asin(x) / rad;
+  };
+  const base = oa(srAscDeg);
+  return lon => ((((oa(lon) - base) % 360) + 360) % 360) / 360 * yearDays;
+}
+
+export function computeKeyDates(natalDate, sr, nextSr, latitude, longitude, profectedSign) {
+  const norm = d => ((d % 360) + 360) % 360;
+  const signOf = lon => Math.floor(norm(lon) / 30);
+  const yearDays = (nextSr.getTime() - sr.getTime()) / DAY_MS;
+  const at = days => new Date(sr.getTime() + days * DAY_MS);
+  const srAsc = computeSkyState(sr, latitude, longitude).asc.deg;
+  const days = ascendantDistributionDays(sr, srAsc, latitude, yearDays);
+  const keySigns = [0, 3, 6, 9].map(q => (profectedSign + q) % 12);
+  const lord = SIGN_RULERS[profectedSign];
+  const lordBody = PLANETS.find(p => p.key === lord).body;
+
+  // Chapters: the directed Ascendant inside each of the four signs. A sign the
+  // Ascendant starts in is split: the opening days and the closing days.
+  const chapters = [];
+  for (const sign of keySigns) {
+    const role = sign === profectedSign ? 'profection' : 'angle';
+    if (signOf(srAsc) === sign) {
+      chapters.push({ sign, role, start: sr, end: at(days(sign * 30 + 30)) });
+      chapters.push({ sign, role, start: at(days(sign * 30)), end: nextSr });
+    } else {
+      chapters.push({ sign, role, start: at(days(sign * 30)), end: at(days(sign * 30 + 30)) });
+    }
+  }
+
+  // Days: the Ascendant reaching the aspects of the lord (return and natal positions).
+  const hits = [];
+  for (const [from, when] of [['return', sr], ['natal', natalDate]]) {
+    const lordLon = eclipticOf(lordBody, when).elon;
+    for (const a of KEY_ASPECTS) {
+      const lon = norm(lordLon + a.deg);
+      if (a.glyph === '⚹' && !keySigns.includes(signOf(lon))) continue;
+      hits.push({ kind: 'aspect', from, glyph: a.glyph, lordLon, lon, date: at(days(lon)) });
+    }
+  }
+
+  // Transits of the lord: ingresses into the four signs, stations.
+  const transits = [];
+  if (lord !== 'Sun' && lord !== 'Moon') {
+    const lonAt = t => eclipticOf(lordBody, new Date(t)).elon;
+    const speedAt = t => ((lonAt(t + DAY_MS / 2) - lonAt(t - DAY_MS / 2) + 540) % 360) - 180;
+    const bisect = (lo, hi, f) => { const flo = f(lo); for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if ((f(m) > 0) === (flo > 0)) lo = m; else hi = m; } return new Date((lo + hi) / 2); };
+    const start = sr.getTime(), end = nextSr.getTime();
+    if (keySigns.includes(signOf(lonAt(start)))) transits.push({ kind: 'transit', event: 'in', sign: signOf(lonAt(start)), date: sr });
+    for (let t = start; t < end; t += DAY_MS) {
+      const t2 = Math.min(t + DAY_MS, end);
+      const s1 = signOf(lonAt(t)), s2 = signOf(lonAt(t2));
+      if (s1 !== s2 && keySigns.includes(s2)) {
+        const edge = (s2 === (s1 + 1) % 12 ? s2 : s1) * 30;
+        transits.push({ kind: 'transit', event: 'enters', sign: s2, retro: s2 !== (s1 + 1) % 12, date: bisect(t, t2, x => ((lonAt(x) - edge + 540) % 360) - 180) });
+      }
+      const v1 = speedAt(t), v2 = speedAt(t2);
+      if ((v1 > 0) !== (v2 > 0)) {
+        const when = bisect(t, t2, speedAt);
+        transits.push({ kind: 'transit', event: v1 > 0 ? 'stations retrograde' : 'stations direct', sign: signOf(lonAt(when.getTime())), date: when });
+      }
+    }
+  }
+
+  return { srAsc, yearDays, keySigns, profectedSign, lord, chapters, hits, transits, sr, nextSr };
 }

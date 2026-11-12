@@ -3,12 +3,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   computeSkyState, computePlanetPath, computePositionCircle, computeZodiacBand,
   computeAspectPlane, computeAspectPoint, eclipticPointToEquatorial, computeAllDirections, computeRegiomontanusHouses,
-  computeBoundCrossings, computeRegiomontanusDirection, boundOf, planetMotion, computeYearView,
+  computeBoundCrossings, computeRegiomontanusDirection, boundOf, planetMotion, computeYearView, SIGN_RULERS,
   computeSkyRotationBasis, computeStarField, ZODIAC_SIGNS,
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
   formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
   computeEquatorialGrid, computeAzimuthalGrid, computeAscPerpendicular, computeWholeSignHouses,
   computeRegiomontanusConstruction, computePlacidusConstruction,
+  houseOf, eclipticOf,
 } from './astro.js';
 import { skybrightnessPrepare, skybrightnessGetLuminance } from './skybrightness.js';
 import {
@@ -44,7 +45,7 @@ const ASPECT_GLYPHS = { 0: '☌', 60: '⚹', 90: '□', 120: '△', 180: '☍' }
 // already-computed sky state — angles aren't astronomy-engine bodies).
 function resolveDirectionPoint(key, state) {
   if (BODY_BY_KEY[key]) return { key, body: BODY_BY_KEY[key] };
-  const angle = { ASC: state.asc, DSC: state.dsc, MC: state.mc, IC: state.ic }[key];
+  const angle = { ASC: state.asc, DSC: state.dsc, MC: state.mc, IC: state.ic, Fortune: state.fortune }[key];
   return angle ? { key, ra: angle.ra, dec: angle.dec } : null;
 }
 
@@ -2012,8 +2013,22 @@ function refreshActiveConstructionAtRotation(fakeDate, liveState) {
 // milliseconds, but no reason to pay that on every input change.
 
 const TABLE_POINT_KEYS = [...PLANETS.map(p => p.key), ...ANGLE_KEYS];
-const PLANET_GLYPHS = { Sun: '☉', Moon: '☽', Mercury: '☿', Venus: '♀', Mars: '♂', Jupiter: '♃', Saturn: '♄' };
-const pointLabel = key => PLANET_GLYPHS[key] ?? key;
+const PLANET_GLYPHS = { Sun: '☉', Moon: '☽', Mercury: '☿', Venus: '♀', Mars: '♂', Jupiter: '♃', Saturn: '♄', Fortune: '⊗' };
+// Nothing past this age is listed: beyond a human lifespan.
+const MAX_DIRECTION_AGE = 101;
+const CLOSEST_EACH_SIDE = 12; // "closest" view: this many rows before and after today
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// "02° ♋ 27′" — degree, sign glyph, minute (the layout of the reference tables).
+function fmtZodiacDM(elonDeg) {
+  let total = Math.round((((elonDeg % 360) + 360) % 360) * 60) % 21600;
+  const sign = Math.floor(total / 1800), d = Math.floor((total % 1800) / 60), m = total % 60;
+  return `${String(d).padStart(2, '0')}° <span class="zs">${ZODIAC_SIGNS[sign].glyph}\uFE0E</span> ${String(m).padStart(2, '0')}′`;
+}
+function fmtArcDM(deg) {
+  const total = Math.round(deg * 60);
+  return `${Math.floor(total / 60)}° ${String(total % 60).padStart(2, '0')}′`;
+}
+const pointLabel = key => PLANET_GLYPHS[key] ?? (/^C\d+$/.test(key) ? `Cusp ${key.slice(1)}` : key);
 
 const tableToggleBtn = document.getElementById('table-toggle-btn');
 const tablePanel = document.getElementById('table-panel');
@@ -2025,23 +2040,51 @@ const tableCloseBtn = document.getElementById('table-close-btn');
 const tableStatus = document.getElementById('table-status');
 const tableBody = document.getElementById('table-body');
 let tableRows = []; // last computed rows, so a click can open the year view for one
+let closestMode = false; // show only the rows nearest today
+const tableClosestBtn = document.getElementById('table-closest-btn');
+const tableTitle = document.getElementById('table-title');
+const tableSigFilter = document.getElementById('table-sig-filter');
 
 function computeTable() {
   if (!natalObserver) return;
   tableStatus.textContent = 'Computing…';
   const minYears = parseFloat(tableMinYears.value) || 0;
-  const maxYears = parseFloat(tableMaxYears.value) || 150;
-  const resolvePoint = key => resolveDirectionPoint(key, lastState);
+  const maxYears = Math.min(parseFloat(tableMaxYears.value) || MAX_DIRECTION_AGE, MAX_DIRECTION_AGE);
+  tableMaxYears.value = String(maxYears);
+  const angles = { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc };
+  // Significator filter: one planet, angle, intermediate house cusp (Regiomontanus,
+  // taken as its zodiac degree at latitude 0) or the Part of Fortune — or all
+  // planets and angles (plus the Part of Fortune; cusps only on request).
+  const only = tableSigFilter.value;
+  const cuspKey = /^C\d+$/.test(only) ? only : null;
+  let cuspPoint = null;
+  if (cuspKey) {
+    const cusps = computeRegiomontanusHouses(natalDate, natalObserver, angles, SPHERE_RADIUS);
+    const eq = eclipticPointToEquatorial(cusps[cuspKey.slice(1)], 0, natalDate);
+    cuspPoint = { key: cuspKey, ra: eq.ra, dec: eq.dec };
+  }
+  const resolvePoint = key => (key === cuspKey ? cuspPoint : resolveDirectionPoint(key, lastState));
   const bodyOf = key => BODY_BY_KEY[key];
 
   const t0 = performance.now();
-  const rows = computeAllDirections(
-    TABLE_POINT_KEYS, resolvePoint, bodyOf, natalDate, natalObserver, SPHERE_RADIUS, maxYears,
+  let rows = computeAllDirections(
+    TABLE_POINT_KEYS, resolvePoint, bodyOf, natalDate, natalObserver, SPHERE_RADIUS, closestMode ? MAX_DIRECTION_AGE : maxYears,
     {
-      includeBoundCrossings: tableBoundsCheckbox.checked,
-      angles: { mc: lastState.mc, ic: lastState.ic, asc: lastState.asc, dsc: lastState.dsc },
+      includeBoundCrossings: tableBoundsCheckbox.checked && !only,
+      angles,
+      significatorOnlyKeys: cuspKey ? ['Fortune', cuspKey] : ['Fortune'],
     },
-  ).filter(r => r.arcYears >= minYears);
+  ).filter(r => r.arcYears <= MAX_DIRECTION_AGE && (closestMode || r.arcYears >= minYears) && (!only || r.significatorKey === only));
+  // Closest view: the rows on either side of today, whatever the age filters say.
+  const now = Date.now();
+  let nextIndex = -1; // first row still ahead of today
+  if (closestMode) {
+    const firstAhead = rows.findIndex(r => r.date.getTime() >= now);
+    const pivot = firstAhead < 0 ? rows.length : firstAhead;
+    const from = Math.max(0, pivot - CLOSEST_EACH_SIDE);
+    rows = rows.slice(from, pivot + CLOSEST_EACH_SIDE);
+    nextIndex = firstAhead < 0 ? -1 : pivot - from;
+  }
   const ms = (performance.now() - t0).toFixed(0);
 
   // Harmonious (sextile/trine) vs hard (square/opposition) aspects — a
@@ -2072,16 +2115,19 @@ function computeTable() {
 
   tableRows = rows;
   tableBody.innerHTML = rows.map((r, i) => {
-    const dateStr = r.date.toISOString().slice(0, 10);
+    // "2026 Sep 07": year and month as in the reference tables, plus the day.
+    const dateStr = `${r.date.getUTCFullYear()} ${MONTHS[r.date.getUTCMonth()]} ${String(r.date.getUTCDate()).padStart(2, '0')}`;
+    const fullDate = r.date.toISOString().slice(0, 10);
+    const todayClass = i === nextIndex ? ' next-up' : '';
 
     if (r.kind === 'bound') {
       // A planet's (or angle's) own primary-motion path entering a new
       // Egyptian bound — one row per real crossing, deduped across the
       // whole table (computed once per point, not once per direction).
-      const signGlyph = r.signIndex != null ? ZODIAC_SIGNS[r.signIndex].glyph : '';
+      const signGlyph = r.signIndex != null ? `${ZODIAC_SIGNS[r.signIndex].glyph}\uFE0E` : '';
       const position = `${pointLabel(r.fromRuler)}→${pointLabel(r.toRuler)} (${signGlyph})`;
       const houseCell = r.house != null ? `House ${r.house}` : '—';
-      return `<tr class="type-b">
+      return `<tr class="type-b${todayClass}" title="${fullDate}">
         <td>—</td>
         <td>${pointLabel(r.movingKey)}</td>
         <td>${position}</td>
@@ -2092,19 +2138,23 @@ function computeTable() {
       </tr>`;
     }
 
-    const promissorLabel = pointLabel(r.promissorKey) + (r.aspectGlyph !== '☌' ? r.aspectGlyph : '') + (r.aspectDir ? (r.aspectDir === 'dexter' ? ' (dex)' : '') : '');
-    const position = r.promissorElon != null ? formatEclipticDegree(r.promissorElon) : '—';
+    // Lord of the year at the perfection date (profected Ascendant, one sign per
+    // completed year; the birthday stands in for the solar return here).
+    const yearLord = SIGN_RULERS[(Math.floor(lastState.asc.deg / 30) + Math.floor(r.arcYears)) % 12];
+    const lordDot = key => (key === yearLord ? ' <span class="lord-dot" title="Lord of the year">●</span>' : '');
+    const promissorLabel = `<span class="asp">${r.aspectGlyph}</span><span class="pt">${pointLabel(r.promissorKey)}</span>${lordDot(r.promissorKey)}${r.aspectDir ? `<span class="side">${r.aspectDir === 'dexter' ? 'Dxt.' : 'Sst.'}</span>` : ''}`;
+    const position = r.promissorElon != null ? fmtZodiacDM(r.promissorElon) : '—';
     const type = r.swapped ? 'C' : 'D';
     const natureClass = rowNatureClass(r);
     // Past a normal lifespan — still a real, computable pairing (kept in
     // the table for reference), just greyed rather than competing visually
     // with the ones someone will actually live to see.
     const longArcClass = r.arcYears > 90 ? 'long-arc' : '';
-    return `<tr data-i="${i}" title="Open year view" class="type-${type.toLowerCase()} ${natureClass} ${longArcClass}">
-      <td>${pointLabel(r.significatorKey)}</td>
+    return `<tr data-i="${i}" title="${fullDate} — open year view" class="type-${type.toLowerCase()} ${natureClass} ${longArcClass}${todayClass}">
+      <td class="pt">${pointLabel(r.significatorKey)}${lordDot(r.significatorKey)}</td>
       <td>${promissorLabel}</td>
       <td>${position}</td>
-      <td>${r.arcDeg.toFixed(1)}°</td>
+      <td>${fmtArcDM(r.arcDeg)}</td>
       <td>${type}</td>
       <td>${r.arcYears.toFixed(1)}</td>
       <td>${dateStr}</td>
@@ -2112,17 +2162,30 @@ function computeTable() {
   }).join('');
 
   tableStatus.textContent = `${rows.length} rows · ${ms}ms`;
+  tableTitle.textContent = closestMode ? 'Directions — closest to today' : 'Directions — chronological';
+  tableClosestBtn.textContent = closestMode ? 'Show all' : 'Closest to today';
+  tableMinYears.disabled = tableMaxYears.disabled = closestMode;
+  if (closestMode) tableBody.querySelector('tr.next-up')?.scrollIntoView({ block: 'center' });
 }
 
+function openTable(closest) {
+  closestMode = closest;
+  tablePanel.hidden = false;
+  computeTable();
+}
+tableClosestBtn.addEventListener('click', () => openTable(!closestMode));
+document.getElementById('closest-toggle-btn').addEventListener('click', () => openTable(true));
+
 tableToggleBtn.addEventListener('click', () => {
-  tablePanel.hidden = !tablePanel.hidden;
-  if (!tablePanel.hidden) computeTable();
+  if (tablePanel.hidden || closestMode) openTable(false);
+  else tablePanel.hidden = true;
 });
 tableCloseBtn.addEventListener('click', () => { tablePanel.hidden = true; });
 tableRecomputeBtn.addEventListener('click', computeTable);
 tableMaxYears.addEventListener('change', computeTable);
 tableMinYears.addEventListener('change', computeTable);
 tableBoundsCheckbox.addEventListener('change', computeTable);
+tableSigFilter.addEventListener('change', computeTable);
 
 // ── 2D chart wheel ────────────────────────────────────────────────────────
 
@@ -2174,18 +2237,137 @@ function openYearView({ title, date, promissorKey, significatorKey }) {
       <td>${i + 1}</td><td>${fmtDay(m.start)} → ${fmtDay(m.end)}</td><td>${signName(m.signIndex)}</td><td>${pointLabel(m.ruler)} ${m.ruler}${m.ruler === promissorKey || m.ruler === significatorKey ? ' <span class="yv-yes">●</span>' : ''}</td>
     </tr>`).join('');
 
+  // Directions inside the solar return chart (textbook Ex. 36): this direction's
+  // promissor, every aspect of it, carried to the direction's significator, to
+  // itself and to the return's Asc/MC. 360° = the solar year.
+  const sigs = new Set([significatorKey, promissorKey, 'ASC', 'MC']);
+  const rd = y.returnDirections.filter(r => r.promissorKey === promissorKey && sigs.has(r.significatorKey));
+  const nearest = rd.reduce((best, r) => (!best || Math.abs(r.date - date) < Math.abs(best.date - date) ? r : best), null);
+  // Every row lies inside this one solar year, so one lord of the year applies
+  // to all of them; ● marks the rows it takes part in.
+  const fmtTableDate = d => `${d.getUTCFullYear()} ${MONTHS[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}`;
+  const rdRows = rd.map(r => {
+    const withLord = r.promissorKey === lord || r.significatorKey === lord;
+    return `<tr class="${r === nearest ? 'yv-now' : ''}">
+      <td>${pointLabel(r.promissorKey)} ${r.aspectGlyph}${r.aspectDir === 'dexter' ? ' (dex)' : ''} → ${pointLabel(r.significatorKey)}${withLord ? ' <span class="yv-yes" title="Lord of the year">●</span>' : ''}</td><td class="yv-date">${fmtTableDate(r.date)}</td>
+    </tr>`;
+  }).join('');
+  const rdTable = rd.length ? `
+    <table><thead><tr><th>Direction in the return chart</th><th class="yv-date">Date</th></tr></thead><tbody>${rdRows}</tbody></table>
+    <div class="yv-note">The solar return chart read as a radix for its year: ${pointLabel(promissorKey)} and its aspects directed to ${[...sigs].map(pointLabel).join(', ')} of the return chart. ● marks a direction with the lord of the year (${pointLabel(lord)} ${lord}, until ${fmtDay(y.nextSr)}). Highlighted: the one nearest the perfection date.</div>` : '';
+
   yearTitleEl.textContent = `Year view — ${title}`;
   yearBodyEl.innerHTML = `
-    <div class="yv-hit">Perfects <b>${fmtDay(date)}</b> · age ${y.ageYears.toFixed(1)} · ${daysAfterSr} days after the solar return</div>
+    <div class="yv-hit">Perfects <b>${fmtDay(date)}</b> · age ${y.ageYears.toFixed(1)} · ${daysAfterSr} days after the solar return
+      ${y.keyDates ? `<button type="button" class="ghost-btn yv-keydates" data-date="${date.toISOString()}">🗝 Key dates of this year</button>` : ''}</div>
     <div class="yv-row"><span>Solar return</span><span>${fmtUT(y.sr)}${y.completedYears === 0 ? ' (birth)' : ''} → ${fmtUT(y.nextSr)}<br>
       year of life ${y.completedYears + 1}${y.srAsc != null ? ` · return Asc ${formatEclipticDegree(y.srAsc)} · MC ${formatEclipticDegree(y.srMc)}` : ''}</span></div>
     <div class="yv-row"><span>Annual profection</span><span>house ${y.profection.house} · ${signName(y.profection.signIndex)} · lord of the year ${pointLabel(lord)} ${lord}
       ${involved ? '<span class="yv-yes">— the lord is in this direction</span>' : ''}</span></div>
     <div class="yv-row"><span>Nearest lunar return</span><span>${lr ? `${fmtUT(lr)} (${lrDays === 0 ? 'the same day' : `${Math.abs(lrDays)} days ${lrDays < 0 ? 'before' : 'after'}`})` : '—'}</span></div>
     <table><thead><tr><th>#</th><th>Monthly profection (from the return)</th><th>Sign</th><th>Lord</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="yv-note">Highlighted: the month containing the perfection date. ● marks a lord that is the promissor or significator. Tropical zodiac, birthplace, geocentric. A direction gives the year; the return and profections show whether the year activates it — a window of weeks, not a day.</div>`;
+    <div class="yv-note">Highlighted: the month containing the perfection date. ● marks a lord that is the promissor or significator. Tropical zodiac, birthplace, geocentric. A direction gives the year; the return and profections show whether the year activates it — a window of weeks, not a day.</div>${rdTable}`;
   yearPanel.hidden = false;
+  yearBodyEl.querySelector('.yv-keydates')?.addEventListener('click', e => openKeyDates(new Date(e.currentTarget.dataset.date)));
 }
+
+// ── Key dates of the solar year (Dykes) ──────────────────────────────────
+// See astro.js computeKeyDates. One list, in date order: the four chapters (the
+// directed return Ascendant in the profected sign and its whole-sign angles),
+// the days it reaches the lord of the year's aspects, and the lord's ingresses
+// into those signs and stations.
+let keyDatesHouses = 'whole-sign'; // or 'regiomontanus'
+let keyDatesOnlyKey = false; // "Only key dates": chapters, return-lord days, primary-direction overlaps
+function openKeyDates(date) {
+  if (!lastState?.asc || !natalDate) return;
+  const y = computeYearView(natalDate, natalObserver.latitude, natalObserver.longitude, date, YEAR_ASC_DEG());
+  const k = y.keyDates;
+  if (!k) return;
+  const lord = k.lord;
+  const signShort = i => `${ZODIAC_SIGNS[i].glyph}\uFE0E ${ZODIAC_SIGNS[i].name}`;
+  const fmtTableDate = d => `${d.getUTCFullYear()} ${MONTHS[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}`;
+  // Houses: whole-sign by default, as in Dykes's workshop (the sign counted from
+  // the natal / return Ascendant sign), or Regiomontanus (the degree against the
+  // natal / return cusps). Each row has a longitude range [from, to): a chapter
+  // spans its sign (so it can cross a Regiomontanus cusp: shown as "6–7"), an
+  // aspect or transit row is a single degree.
+  const rAscSign = Math.floor(YEAR_ASC_DEG() / 30), srAscSign = Math.floor(k.srAsc / 30);
+  const regio = keyDatesHouses === 'regiomontanus';
+  let rCusps = null, srCusps = null;
+  if (regio) {
+    const L = lastState;
+    rCusps = computeRegiomontanusHouses(natalDate, natalObserver, { mc: L.mc, ic: L.ic, asc: L.asc, dsc: L.dsc }, SPHERE_RADIUS);
+    const sk = computeSkyState(k.sr, natalObserver.latitude, natalObserver.longitude, SPHERE_RADIUS);
+    srCusps = computeRegiomontanusHouses(k.sr, sk.observer, { mc: sk.mc, ic: sk.ic, asc: sk.asc, dsc: sk.dsc }, SPHERE_RADIUS);
+  }
+  const houseCell = (it, ascSign, cusps) => {
+    if (!regio) return String(((it.sign - ascSign + 12) % 12) + 1);
+    const a = houseOf(it.from, cusps), b = it.to == null ? a : houseOf(it.to, cusps);
+    return a === b ? String(a) : `${a}–${b}`;
+  };
+  const lordBody = BODY_BY_KEY[lord];
+  const items = [
+    ...k.chapters.map(c => ({ date: c.start, sign: c.sign,
+      from: c.start.getTime() === k.sr.getTime() && Math.floor(k.srAsc / 30) === c.sign ? k.srAsc : c.sign * 30,
+      to: c.end.getTime() === k.nextSr.getTime() && Math.floor(k.srAsc / 30) === c.sign ? k.srAsc - 0.001 : c.sign * 30 + 29.999,
+      cls: 'kd-chapter', dot: c.role === 'profection' ? 'kd-red' : 'kd-green',
+      text: `ASC in ${signShort(c.sign)}${c.role === 'profection' ? ' (sign of the year)' : ''}`, right: `${fmtTableDate(c.start)} → ${fmtTableDate(c.end)}` })),
+    ...k.hits.map(h => ({ date: h.date, sign: Math.floor(h.lon / 30) % 12, from: h.lon, cls: h.from === 'return' ? 'kd-hit kd-sr' : 'kd-hit',
+      text: `ASC ${h.glyph} ${h.from === 'natal' ? 'natal' : 'return'} ${pointLabel(lord)} <span class="kd-pos">${formatEclipticDegree(h.lon)}</span>`, right: fmtTableDate(h.date) })),
+    ...k.transits.map(t => ({ date: t.date, sign: t.sign, from: eclipticOf(lordBody, t.date).elon, cls: 'kd-transit',
+      text: `${pointLabel(lord)} ${t.event === 'in' ? 'already in' : t.event} ${t.event.startsWith('stations') ? 'in ' : ''}${signShort(t.sign)}${t.retro ? ' (retrograde)' : ''}`, right: fmtTableDate(t.date) })),
+  ].sort((a, b) => a.date - b.date);
+  // Natal primary directions perfecting within a day of a key date (Dykes puts
+  // events within 1–2 days of these): the row turns red and names them.
+  const L = lastState;
+  const pd = computeAllDirections(
+    TABLE_POINT_KEYS, key => resolveDirectionPoint(key, L), key => BODY_BY_KEY[key], natalDate, natalObserver, SPHERE_RADIUS, MAX_DIRECTION_AGE,
+    { includeBoundCrossings: false, angles: { mc: L.mc, ic: L.ic, asc: L.asc, dsc: L.dsc }, significatorOnlyKeys: ['Fortune'] },
+  ).filter(r => r.date >= new Date(k.sr.getTime() - 2 * 86400000) && r.date <= new Date(k.nextSr.getTime() + 2 * 86400000));
+  const sameDay = (a, b) => Math.abs(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate()) - Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate())) <= 86400000;
+  const pdLabel = r => `${pointLabel(r.promissorKey)} ${r.aspectGlyph}${r.aspectDir === 'dexter' ? ' Dxt.' : r.aspectDir === 'sinister' ? ' Sst.' : ''} → ${pointLabel(r.significatorKey)}${r.swapped ? ' (C)' : ''}`;
+  // One event often appears under several names (♀ ☌ ASC = ASC ☌ ♀ = ♀ ☍ DSC …:
+  // the same arc). Keep one per arc, a direct one first.
+  for (const it of items) {
+    const seen = new Set();
+    it.pd = pd.filter(r => sameDay(r.date, it.date))
+      .sort((a, b) => a.swapped - b.swapped)
+      .filter(r => { const key = r.arcDeg.toFixed(3); if (seen.has(key)) return false; seen.add(key); return true; });
+  }
+  // Only key dates: the chapters, the days of the return lord's aspects (the
+  // bold rows) and any row that coincides with a primary direction.
+  const shown = keyDatesOnlyKey
+    ? items.filter(it => it.cls === 'kd-chapter' || it.cls.includes('kd-sr') || it.pd.length)
+    : items;
+  const now = Date.now();
+  const nextIdx = shown.findIndex(it => it.date.getTime() >= now);
+  const rows = shown.map((it, i) => `<tr class="${it.cls}${i === nextIdx ? ' next-up' : ''}${it.pd.length ? ' kd-pd' : ''}">
+      <td>${it.dot ? `<span class="${it.dot}">●</span> ` : ''}${it.text}${it.pd.length ? `<div class="kd-pd-note">Primary direction also: ${it.pd.map(r => `${pdLabel(r)} (${fmtTableDate(r.date)})`).join('; ')}</div>` : ''}</td><td class="kd-house">${houseCell(it, rAscSign, rCusps)}</td><td class="kd-house">${houseCell(it, srAscSign, srCusps)}</td><td class="yv-date">${it.right}</td></tr>`).join('');
+  const prev = new Date(k.sr.getTime() - 86400000), next = new Date(k.nextSr.getTime() + 86400000);
+  yearTitleEl.textContent = `Key dates — year of life ${y.completedYears + 1}`;
+  yearBodyEl.innerHTML = `
+    <div class="yv-hit kd-nav">
+      <button type="button" class="ghost-btn" data-go="${prev.toISOString()}">◀</button>
+      <span>${fmtDay(k.sr)} → ${fmtDay(k.nextSr)}</span>
+      <button type="button" class="ghost-btn" data-go="${next.toISOString()}">▶</button>
+      <label class="kd-only"><input type="checkbox"${keyDatesOnlyKey ? ' checked' : ''}> Only key dates</label>
+      <label class="kd-houses">Houses <select>
+        <option value="whole-sign"${regio ? '' : ' selected'}>Whole sign</option>
+        <option value="regiomontanus"${regio ? ' selected' : ''}>Regiomontanus</option>
+      </select></label>
+    </div>
+    <div class="yv-row"><span>Profection</span><span>house ${y.profection.house} · ${signName(k.profectedSign)} · lord of the year ${pointLabel(lord)} ${lord}</span></div>
+    <div class="yv-row"><span>The four signs</span><span>${k.keySigns.map((s, i) => `<span class="${i === 0 ? 'kd-red' : 'kd-green'}">●</span> ${signShort(s)}`).join(' · ')}</span></div>
+    <div class="yv-row"><span>Return Ascendant</span><span>${formatEclipticDegree(k.srAsc)}, directed once around the zodiac this year</span></div>
+    <table><thead><tr><th>Event</th><th class="kd-house" title="Natal (radix) house, whole-sign">r House</th><th class="kd-house" title="Solar return house, whole-sign">SR House</th><th class="yv-date">Date</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="yv-note">Benjamin Dykes, Revolutions workshop (2013). The solar return Ascendant is directed through the zodiac by the ascensions of the signs at the birthplace, one full turn per year. Shaded rows are the chapters of the year: the directed Ascendant in the sign of the profection (red) and the signs square and opposite it (green). Other rows are days when it reaches the lord of the year's conjunction, squares, trines or opposition, from its return position (<b>bold</b>) and its natal position; sextiles only inside the four signs. He reports events within a day or two of these. Blue rows are the lord's own transits: entering one of the four signs, and its stations${lord === 'Sun' || lord === 'Moon' ? ' — not used when the Sun or Moon is the lord' : ''}. The line marks the next date from today. <i>Only key dates</i> keeps the chapters, the bold days and the red ones. <span class="kd-pd-key">Red</span>: a natal primary direction perfects within a day of that date. r House / SR House: where the event falls in the natal and the return chart — whole-sign (as Dykes uses) or Regiomontanus cusps; a chapter crossing a Regiomontanus cusp shows both houses.</div>`;
+  yearBodyEl.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => openKeyDates(new Date(b.dataset.go))));
+  yearBodyEl.querySelector('.kd-only input').addEventListener('change', e => { keyDatesOnlyKey = e.target.checked; openKeyDates(date); });
+  yearBodyEl.querySelector('.kd-houses select').addEventListener('change', e => { keyDatesHouses = e.target.value; openKeyDates(date); });
+  yearPanel.hidden = false;
+  yearBodyEl.querySelector('tr.next-up')?.scrollIntoView({ block: 'center' });
+}
+document.getElementById('keydates-toggle-btn').addEventListener('click', () => openKeyDates(new Date()));
 
 document.getElementById('year-close-btn').addEventListener('click', () => { yearPanel.hidden = true; });
 
