@@ -2277,6 +2277,7 @@ function openYearView({ title, date, promissorKey, significatorKey }) {
 // the days it reaches the lord of the year's aspects, and the lord's ingresses
 // into those signs and stations.
 let keyDatesHouses = 'whole-sign'; // or 'regiomontanus'
+let keyDatesExpanded = false; // add every sign/decan/bound ingress and planet conjunction
 let keyDatesOnlyKey = false; // "Only key dates": chapters, return-lord days, primary-direction overlaps
 function openKeyDates(date) {
   if (!lastState?.asc || !natalDate) return;
@@ -2316,7 +2317,24 @@ function openKeyDates(date) {
       text: `ASC ${h.glyph} ${h.from === 'natal' ? 'natal' : 'return'} ${pointLabel(lord)} <span class="kd-pos">${formatEclipticDegree(h.lon)}</span>`, right: fmtTableDate(h.date) })),
     ...k.transits.map(t => ({ date: t.date, sign: t.sign, from: eclipticOf(lordBody, t.date).elon, cls: 'kd-transit',
       text: `${pointLabel(lord)} ${t.event === 'in' ? 'already in' : t.event} ${t.event.startsWith('stations') ? 'in ' : ''}${signShort(t.sign)}${t.retro ? ' (retrograde)' : ''}`, right: fmtTableDate(t.date) })),
-  ].sort((a, b) => a.date - b.date);
+  ];
+  if (keyDatesExpanded) {
+    for (const b of k.boundaries) {
+      const parts = [];
+      if (b.signIngress) parts.push(`enters ${signShort(b.sign)}`);
+      if (b.decan) parts.push(`${['1st', '2nd', '3rd'][b.decan - 1]} decan (face of ${pointLabel(b.faceRuler)})`);
+      if (b.boundRuler) parts.push(`bound of ${pointLabel(b.boundRuler)}`);
+      items.push({ date: b.date, sign: b.sign, from: b.lon, cls: b.signIngress ? 'kd-ext kd-ext-sign' : 'kd-ext',
+        text: `ASC ${b.signIngress ? '' : `at ${b.deg}° ${ZODIAC_SIGNS[b.sign].glyph}\uFE0E: `}${parts.join(' · ')}`, right: fmtTableDate(b.date) });
+    }
+    for (const c of k.conjunctions) {
+      items.push({ date: c.date, sign: Math.floor(c.lon / 30) % 12, from: c.lon, cls: c.key === lord ? 'kd-ext kd-ext-conj kd-ext-lord' : 'kd-ext kd-ext-conj',
+        text: `ASC ☌ ${c.from} ${pointLabel(c.key)} <span class="kd-pos">${formatEclipticDegree(c.lon)}</span>`, right: fmtTableDate(c.date) });
+    }
+    // The lord's own conjunctions are already listed among the hits.
+    for (let i = items.length - 1; i >= 0; i--) if (items[i].cls.includes('kd-ext-lord')) items.splice(i, 1);
+  }
+  items.sort((a, b) => a.date - b.date);
   // Natal primary directions perfecting within a day of a key date (Dykes puts
   // events within 1–2 days of these): the row turns red and names them.
   const L = lastState;
@@ -2337,7 +2355,7 @@ function openKeyDates(date) {
   // Only key dates: the chapters, the days of the return lord's aspects (the
   // bold rows) and any row that coincides with a primary direction.
   const shown = keyDatesOnlyKey
-    ? items.filter(it => it.cls === 'kd-chapter' || it.cls.includes('kd-sr') || it.pd.length)
+    ? items.filter(it => it.cls === 'kd-chapter' || it.cls.includes('kd-sr') || it.cls.includes('kd-ext') || it.pd.length)
     : items;
   const now = Date.now();
   const nextIdx = shown.findIndex(it => it.date.getTime() >= now);
@@ -2351,6 +2369,7 @@ function openKeyDates(date) {
       <span>${fmtDay(k.sr)} → ${fmtDay(k.nextSr)}</span>
       <button type="button" class="ghost-btn" data-go="${next.toISOString()}">▶</button>
       <label class="kd-only"><input type="checkbox"${keyDatesOnlyKey ? ' checked' : ''}> Only key dates</label>
+      <label class="kd-exp"><input type="checkbox"${keyDatesExpanded ? ' checked' : ''}> Expanded</label>
       <label class="kd-houses">Houses <select>
         <option value="whole-sign"${regio ? '' : ' selected'}>Whole sign</option>
         <option value="regiomontanus"${regio ? ' selected' : ''}>Regiomontanus</option>
@@ -2360,8 +2379,9 @@ function openKeyDates(date) {
     <div class="yv-row"><span>The four signs</span><span>${k.keySigns.map((s, i) => `<span class="${i === 0 ? 'kd-red' : 'kd-green'}">●</span> ${signShort(s)}`).join(' · ')}</span></div>
     <div class="yv-row"><span>Return Ascendant</span><span>${formatEclipticDegree(k.srAsc)}, directed once around the zodiac this year</span></div>
     <table><thead><tr><th>Event</th><th class="kd-house" title="Natal (radix) house, whole-sign">r House</th><th class="kd-house" title="Solar return house, whole-sign">SR House</th><th class="yv-date">Date</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="yv-note">Benjamin Dykes, Revolutions workshop (2013). The solar return Ascendant is directed through the zodiac by the ascensions of the signs at the birthplace, one full turn per year. Shaded rows are the chapters of the year: the directed Ascendant in the sign of the profection (red) and the signs square and opposite it (green). Other rows are days when it reaches the lord of the year's conjunction, squares, trines or opposition, from its return position (<b>bold</b>) and its natal position; sextiles only inside the four signs. He reports events within a day or two of these. Blue rows are the lord's own transits: entering one of the four signs, and its stations${lord === 'Sun' || lord === 'Moon' ? ' — not used when the Sun or Moon is the lord' : ''}. The line marks the next date from today. <i>Only key dates</i> keeps the chapters, the bold days and the red ones. <span class="kd-pd-key">Red</span>: a natal primary direction perfects within a day of that date. r House / SR House: where the event falls in the natal and the return chart — whole-sign (as Dykes uses) or Regiomontanus cusps; a chapter crossing a Regiomontanus cusp shows both houses.</div>`;
+    <div class="yv-note">Benjamin Dykes, Revolutions workshop (2013). The solar return Ascendant is directed through the zodiac by the ascensions of the signs at the birthplace, one full turn per year. Shaded rows are the chapters of the year: the directed Ascendant in the sign of the profection (red) and the signs square and opposite it (green). Other rows are days when it reaches the lord of the year's conjunction, squares, trines or opposition, from its return position (<b>bold</b>) and its natal position; sextiles only inside the four signs. He reports events within a day or two of these. Blue rows are the lord's own transits: entering one of the four signs, and its stations${lord === 'Sun' || lord === 'Moon' ? ' — not used when the Sun or Moon is the lord' : ''}. The line marks the next date from today. <i>Only key dates</i> keeps the chapters, the bold days and the red ones. <i>Expanded</i> adds, in grey, every sign, decan (Chaldean faces) and Egyptian bound the Ascendant enters, and its conjunctions with every planet's return and natal body (no aspects). <span class="kd-pd-key">Red</span>: a natal primary direction perfects within a day of that date. r House / SR House: where the event falls in the natal and the return chart — whole-sign (as Dykes uses) or Regiomontanus cusps; a chapter crossing a Regiomontanus cusp shows both houses.</div>`;
   yearBodyEl.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => openKeyDates(new Date(b.dataset.go))));
+  yearBodyEl.querySelector('.kd-exp input').addEventListener('change', e => { keyDatesExpanded = e.target.checked; openKeyDates(date); });
   yearBodyEl.querySelector('.kd-only input').addEventListener('change', e => { keyDatesOnlyKey = e.target.checked; openKeyDates(date); });
   yearBodyEl.querySelector('.kd-houses select').addEventListener('change', e => { keyDatesHouses = e.target.value; openKeyDates(date); });
   yearPanel.hidden = false;

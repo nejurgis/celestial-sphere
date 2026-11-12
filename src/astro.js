@@ -1467,6 +1467,8 @@ export function computeYearView(natalDate, latitude, longitude, targetDate, nata
 //  * transits: the lord of the year entering one of the four signs and its
 //    stations. Not for the Sun or Moon as lords (Persian rule he follows).
 // Checked against his worked dates in scripts/verify-directions.mjs.
+// Chaldean order of the faces (decans), from the first decan of Aries: Mars.
+const FACE_RULERS = ['Mars', 'Sun', 'Venus', 'Mercury', 'Moon', 'Saturn', 'Jupiter'];
 const KEY_ASPECTS = [
   { deg: 0, glyph: '☌' }, { deg: 90, glyph: '□' }, { deg: -90, glyph: '□' }, { deg: 120, glyph: '△' },
   { deg: -120, glyph: '△' }, { deg: 180, glyph: '☍' }, { deg: 60, glyph: '⚹' }, { deg: -60, glyph: '⚹' },
@@ -1542,5 +1544,28 @@ export function computeKeyDates(natalDate, sr, nextSr, latitude, longitude, prof
     }
   }
 
-  return { srAsc, yearDays, keySigns, profectedSign, lord, chapters, hits, transits, sr, nextSr };
+  // Expanded view: every boundary the directed Ascendant crosses (sign, decan,
+  // Egyptian bound — merged where they coincide) and its conjunctions with every
+  // planet's body, return and natal. No aspects.
+  const boundaries = [];
+  for (let sign = 0; sign < 12; sign++) {
+    const marks = new Map();
+    const at0 = deg => { if (!marks.has(deg)) marks.set(deg, { sign, deg }); return marks.get(deg); };
+    at0(0).signIngress = true;
+    for (let d = 0; d < 3; d++) Object.assign(at0(d * 10), { decan: d + 1, faceRuler: FACE_RULERS[(sign * 3 + d) % 7] });
+    EGYPTIAN_BOUNDS[sign].forEach((b, i) => { at0(i === 0 ? 0 : EGYPTIAN_BOUNDS[sign][i - 1].to).boundRuler = b.ruler; });
+    for (const m of marks.values()) {
+      const lon = sign * 30 + m.deg;
+      boundaries.push({ ...m, lon, date: at(days(lon)) });
+    }
+  }
+  const conjunctions = [];
+  for (const [from, when] of [['return', sr], ['natal', natalDate]]) {
+    for (const p of PLANETS) {
+      const lon = eclipticOf(p.body, when).elon;
+      conjunctions.push({ from, key: p.key, lon, date: at(days(lon)) });
+    }
+  }
+
+  return { srAsc, yearDays, keySigns, profectedSign, lord, chapters, hits, transits, boundaries, conjunctions, sr, nextSr };
 }

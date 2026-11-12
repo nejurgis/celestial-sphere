@@ -489,6 +489,17 @@ lists, as he recommends:
 - **transits** — the lord entering one of the four signs, and its stations (skipped when
   the Sun or Moon is lord, the Persian rule he follows).
 
+Panel options: houses whole-sign or Regiomontanus (r / SR columns); red rows where a
+natal primary direction perfects within a day; "Only key dates" (chapters, return-lord
+days, red rows); "Expanded" (every sign, decan — Chaldean faces from Mars at 0° Aries —
+and Egyptian bound the Ascendant enters, merged where they coincide, plus its
+conjunctions with every planet's return and natal body; no aspects).
+
+Sign ascension totals equal Dykes's 2014 *Table of Ascensional Times* to five decimals
+(checked at 45° and 55°N). His hand method spreads each sign evenly per degree and adds a
+day every other sign; the app uses each degree's own ascension and spreads the extra
+days evenly — within a day or two of his.
+
 Exact oblique ascensions per degree (as in Delphic Oracle) rather than his whole-sign
 table; his worked sign-entry dates are reproduced within 1–2 days in
 `verify-directions.mjs`. Sidebar: "🗝 Key dates of the year" (◀ ▶ for other years);
