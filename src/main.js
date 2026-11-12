@@ -4,6 +4,7 @@ import {
   computeSkyState, computePlanetPath, computePositionCircle, computeZodiacBand,
   computeAspectPlane, computeAspectPoint, eclipticPointToEquatorial, computeAllDirections, computeRegiomontanusHouses,
   computeBoundCrossings, computeRegiomontanusDirection, boundOf, planetMotion, computeYearView, SIGN_RULERS,
+  hellenisticLots, zrSubperiods, keyDateEvents,
   computeSkyRotationBasis, computeStarField, ZODIAC_SIGNS,
   siderealRotatedDate, horizonOf, altAzToXYZ, computeMoonInfo,
   formatEclipticDegree, NAIBOD_DEG_PER_YEAR, PLANETS, PATH_WINDOW_DAYS,
@@ -2283,7 +2284,6 @@ function openKeyDates(date) {
   if (!lastState?.asc || !natalDate) return;
   const y = computeYearView(natalDate, natalObserver.latitude, natalObserver.longitude, date, YEAR_ASC_DEG());
   const k = y.keyDates;
-  if (!k) return;
   const lord = k.lord;
   const signShort = i => `${ZODIAC_SIGNS[i].glyph}\uFE0E ${ZODIAC_SIGNS[i].name}`;
   const fmtTableDate = d => `${d.getUTCFullYear()} ${MONTHS[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}`;
@@ -2341,7 +2341,7 @@ function openKeyDates(date) {
   const pd = computeAllDirections(
     TABLE_POINT_KEYS, key => resolveDirectionPoint(key, L), key => BODY_BY_KEY[key], natalDate, natalObserver, SPHERE_RADIUS, MAX_DIRECTION_AGE,
     { includeBoundCrossings: false, angles: { mc: L.mc, ic: L.ic, asc: L.asc, dsc: L.dsc }, significatorOnlyKeys: ['Fortune'] },
-  ).filter(r => r.date >= new Date(k.sr.getTime() - 2 * 86400000) && r.date <= new Date(k.nextSr.getTime() + 2 * 86400000));
+  ).filter(r => r.arcDeg > 0.01 && r.date >= new Date(k.sr.getTime() - 2 * 86400000) && r.date <= new Date(k.nextSr.getTime() + 2 * 86400000));
   const sameDay = (a, b) => Math.abs(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate()) - Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate())) <= 86400000;
   const pdLabel = r => `${pointLabel(r.promissorKey)} ${r.aspectGlyph}${r.aspectDir === 'dexter' ? ' Dxt.' : r.aspectDir === 'sinister' ? ' Sst.' : ''} → ${pointLabel(r.significatorKey)}${r.swapped ? ' (C)' : ''}`;
   // One event often appears under several names (♀ ☌ ASC = ASC ☌ ♀ = ♀ ☍ DSC …:
@@ -2354,13 +2354,19 @@ function openKeyDates(date) {
   }
   // Only key dates: the chapters, the days of the return lord's aspects (the
   // bold rows) and any row that coincides with a primary direction.
+  const zrStarts0 = zrStartsBetween(new Date(k.sr.getTime() - 2 * 86400000), new Date(k.nextSr.getTime() + 2 * 86400000));
+  const zrNear = it => zrStarts0.some(z => Math.abs(z.date - it.date) <= 1.5 * 86400000);
   const shown = keyDatesOnlyKey
-    ? items.filter(it => it.cls === 'kd-chapter' || it.cls.includes('kd-sr') || it.cls.includes('kd-ext') || it.pd.length)
+    ? items.filter(it => it.cls === 'kd-chapter' || it.cls.includes('kd-sr') || it.cls.includes('kd-ext') || it.pd.length || zrNear(it))
     : items;
+  // Zodiacal releasing (Spirit and Fortune, levels 1–3) changing sign within a
+  // day of a row: noted under it.
+  const zrStarts = zrStartsBetween(new Date(k.sr.getTime() - 2 * 86400000), new Date(k.nextSr.getTime() + 2 * 86400000));
+  for (const it of items) it.zr = zrStarts.filter(z => Math.abs(z.date - it.date) <= 1.5 * 86400000);
   const now = Date.now();
   const nextIdx = shown.findIndex(it => it.date.getTime() >= now);
   const rows = shown.map((it, i) => `<tr class="${it.cls}${i === nextIdx ? ' next-up' : ''}${it.pd.length ? ' kd-pd' : ''}">
-      <td>${it.dot ? `<span class="${it.dot}">●</span> ` : ''}${it.text}${it.pd.length ? `<div class="kd-pd-note">Primary direction also: ${it.pd.map(r => `${pdLabel(r)} (${fmtTableDate(r.date)})`).join('; ')}</div>` : ''}</td><td class="kd-house">${houseCell(it, rAscSign, rCusps)}</td><td class="kd-house">${houseCell(it, srAscSign, srCusps)}</td><td class="yv-date">${it.right}</td></tr>`).join('');
+      <td>${it.dot ? `<span class="${it.dot}">●</span> ` : ''}${it.text}${it.pd.length ? `<div class="kd-pd-note">Primary direction also: ${it.pd.map(r => `${pdLabel(r)} (${fmtTableDate(r.date)})`).join('; ')}</div>` : ''}${it.zr.length ? `<div class="zr-kd-note">Zodiacal releasing also: ${it.zr.map(z => `${z.lot} L${z.level} → ${signShort(z.sign)}${z.loosing ? ' (LB)' : ''} (${fmtTableDate(z.date)})`).join('; ')}</div>` : ''}</td><td class="kd-house">${houseCell(it, rAscSign, rCusps)}</td><td class="kd-house">${houseCell(it, srAscSign, srCusps)}</td><td class="yv-date">${it.right}</td></tr>`).join('');
   const prev = new Date(k.sr.getTime() - 86400000), next = new Date(k.nextSr.getTime() + 86400000);
   yearTitleEl.textContent = `Key dates — year of life ${y.completedYears + 1}`;
   yearBodyEl.innerHTML = `
@@ -2379,7 +2385,7 @@ function openKeyDates(date) {
     <div class="yv-row"><span>The four signs</span><span>${k.keySigns.map((s, i) => `<span class="${i === 0 ? 'kd-red' : 'kd-green'}">●</span> ${signShort(s)}`).join(' · ')}</span></div>
     <div class="yv-row"><span>Return Ascendant</span><span>${formatEclipticDegree(k.srAsc)}, directed once around the zodiac this year</span></div>
     <table><thead><tr><th>Event</th><th class="kd-house" title="Natal (radix) house, whole-sign">r House</th><th class="kd-house" title="Solar return house, whole-sign">SR House</th><th class="yv-date">Date</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="yv-note">Benjamin Dykes, Revolutions workshop (2013). The solar return Ascendant is directed through the zodiac by the ascensions of the signs at the birthplace, one full turn per year. Shaded rows are the chapters of the year: the directed Ascendant in the sign of the profection (red) and the signs square and opposite it (green). Other rows are days when it reaches the lord of the year's conjunction, squares, trines or opposition, from its return position (<b>bold</b>) and its natal position; sextiles only inside the four signs. He reports events within a day or two of these. Blue rows are the lord's own transits: entering one of the four signs, and its stations${lord === 'Sun' || lord === 'Moon' ? ' — not used when the Sun or Moon is the lord' : ''}. The line marks the next date from today. <i>Only key dates</i> keeps the chapters, the bold days and the red ones. <i>Expanded</i> adds, in grey, every sign, decan (Chaldean faces) and Egyptian bound the Ascendant enters, and its conjunctions with every planet's return and natal body (no aspects). <span class="kd-pd-key">Red</span>: a natal primary direction perfects within a day of that date. r House / SR House: where the event falls in the natal and the return chart — whole-sign (as Dykes uses) or Regiomontanus cusps; a chapter crossing a Regiomontanus cusp shows both houses.</div>`;
+    <div class="yv-note">Benjamin Dykes, Revolutions workshop (2013). The solar return Ascendant is directed through the zodiac by the ascensions of the signs at the birthplace, one full turn per year. Shaded rows are the chapters of the year: the directed Ascendant in the sign of the profection (red) and the signs square and opposite it (green). Other rows are days when it reaches the lord of the year's conjunction, squares, trines or opposition, from its return position (<b>bold</b>) and its natal position; sextiles only inside the four signs. He reports events within a day or two of these. Blue rows are the lord's own transits: entering one of the four signs, and its stations${lord === 'Sun' || lord === 'Moon' ? ' — not used when the Sun or Moon is the lord' : ''}. The line marks the next date from today. Purple notes: a zodiacal-releasing period (Spirit or Fortune, levels 1–3) starts within a day. <i>Only key dates</i> keeps the chapters, the bold days and the red ones. <i>Expanded</i> adds, in grey, every sign, decan (Chaldean faces) and Egyptian bound the Ascendant enters, and its conjunctions with every planet's return and natal body (no aspects). <span class="kd-pd-key">Red</span>: a natal primary direction perfects within a day of that date. r House / SR House: where the event falls in the natal and the return chart — whole-sign (as Dykes uses) or Regiomontanus cusps; a chapter crossing a Regiomontanus cusp shows both houses.</div>`;
   yearBodyEl.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => openKeyDates(new Date(b.dataset.go))));
   yearBodyEl.querySelector('.kd-exp input').addEventListener('change', e => { keyDatesExpanded = e.target.checked; openKeyDates(date); });
   yearBodyEl.querySelector('.kd-only input').addEventListener('change', e => { keyDatesOnlyKey = e.target.checked; openKeyDates(date); });
@@ -2388,6 +2394,108 @@ function openKeyDates(date) {
   yearBodyEl.querySelector('tr.next-up')?.scrollIntoView({ block: 'center' });
 }
 document.getElementById('keydates-toggle-btn').addEventListener('click', () => openKeyDates(new Date()));
+
+// ── Zodiacal releasing (Valens) ───────────────────────────────────────────
+// Every releasing period start (Spirit and Fortune, levels 1–3) in [from, to].
+function zrStartsBetween(from, to) {
+  const L = lastState;
+  const sun = L.planets.find(p => p.key === 'Sun'), moon = L.planets.find(p => p.key === 'Moon');
+  const lots = hellenisticLots(L.asc.deg, sun.elon, moon.elon, sun.altitude > 0);
+  const end = new Date(natalDate.getTime() + MAX_DIRECTION_AGE * 365.2422 * 86400000);
+  const out = [];
+  const overlaps = p => p.end >= from && p.start <= to;
+  for (const [lot, sign] of [['Spirit', lots.spiritSign], ['Fortune', lots.fortuneSign]]) {
+    for (const p1 of zrSubperiods({ sign, start: natalDate, end }, 1).filter(overlaps)) {
+      if (p1.start >= from) out.push({ lot, level: 1, sign: p1.sign, loosing: false, date: p1.start });
+      for (const p2 of zrSubperiods(p1, 2).filter(overlaps)) {
+        if (p2.start >= from && p2.start.getTime() !== p1.start.getTime()) out.push({ lot, level: 2, sign: p2.sign, loosing: p2.loosing, date: p2.start });
+        for (const p3 of zrSubperiods(p2, 3).filter(overlaps)) {
+          if (p3.start >= from && p3.start <= to && p3.start.getTime() !== p2.start.getTime()) out.push({ lot, level: 3, sign: p3.sign, loosing: p3.loosing, date: p3.start });
+        }
+      }
+    }
+  }
+  return out.filter(z => z.date >= from && z.date <= to);
+}
+// See astro.js zrSubperiods. Three nested tables: level 1 for the whole life,
+// level 2 of the chosen L1 period, level 3 of the chosen L2 period (current
+// ones by default; click a row to drill in). Marks: ★ the 10th sign from
+// Fortune, ● its other angles (peak periods), LB the loosing of the bond, red
+// a natal primary direction within a day of the period's start; L2/L3 starts
+// on a Dykes key date are noted too.
+const zr = { lot: 'spirit', l1: null, l2: null, cacheKey: null, pd: null, kd: new Map() };
+function openReleasing() {
+  const L = lastState;
+  if (!L?.asc || !natalDate) return;
+  const sun = L.planets.find(p => p.key === 'Sun'), moon = L.planets.find(p => p.key === 'Moon');
+  const isDay = sun.altitude > 0;
+  const lots = hellenisticLots(L.asc.deg, sun.elon, moon.elon, isDay);
+  const lotSign = zr.lot === 'fortune' ? lots.fortuneSign : lots.spiritSign;
+  const end = new Date(natalDate.getTime() + MAX_DIRECTION_AGE * 365.2422 * 86400000);
+  const key = `${natalDate.getTime()}|${natalObserver.latitude}|${natalObserver.longitude}`;
+  if (zr.cacheKey !== key) {
+    zr.cacheKey = key; zr.kd = new Map(); zr.l1 = zr.l2 = null;
+    zr.pd = computeAllDirections(
+      TABLE_POINT_KEYS, k => resolveDirectionPoint(k, L), k => BODY_BY_KEY[k], natalDate, natalObserver, SPHERE_RADIUS, MAX_DIRECTION_AGE,
+      { includeBoundCrossings: false, angles: { mc: L.mc, ic: L.ic, asc: L.asc, dsc: L.dsc }, significatorOnlyKeys: ['Fortune'] })
+      .filter(r => r.arcDeg > 0.01); // ASC ☍ DSC and the like: zero arc, not a direction
+  }
+  const now = new Date();
+  const l1s = zrSubperiods({ sign: lotSign, start: natalDate, end }, 1);
+  const pick = (list, i) => list[i] ?? list.find(p => p.start <= now && now < p.end) ?? list[0];
+  const l1 = pick(l1s, zr.l1);
+  const l2s = zrSubperiods(l1, 2);
+  const l2 = pick(l2s, zr.l2);
+  const l3s = zrSubperiods(l2, 3);
+
+  const kdFor = period => { // key-date events for a period's span, cached
+    const id = period.start.getTime();
+    if (!zr.kd.has(id)) zr.kd.set(id, keyDateEvents(natalDate, natalObserver.latitude, natalObserver.longitude, L.asc.deg, period.start, period.end));
+    return zr.kd.get(id);
+  };
+  const kdL2 = kdFor(l1), kdL3 = kdL2.filter(e => e.date >= new Date(l2.start.getTime() - 2 * 86400000) && e.date <= l2.end);
+  const near = (a, b) => Math.abs(a - b) <= 1.5 * 86400000;
+  const pdLabel = r => `${pointLabel(r.promissorKey)} ${r.aspectGlyph}${r.aspectDir === 'dexter' ? ' Dxt.' : r.aspectDir === 'sinister' ? ' Sst.' : ''} → ${pointLabel(r.significatorKey)}`;
+  const fmtD = d => `${d.getUTCFullYear()} ${MONTHS[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}`;
+  const fromFortune = s => (s - lots.fortuneSign + 12) % 12;
+
+  const table = (list, level, selected, kd) => {
+    const rows = list.map((p, i) => {
+      const seen = new Set();
+      const pds = level === 1 ? [] : zr.pd.filter(r => near(r.date, p.start)).sort((a, b) => a.swapped - b.swapped)
+        .filter(r => { const k = r.arcDeg.toFixed(3); if (seen.has(k)) return false; seen.add(k); return true; });
+      const kds = kd ? kd.filter(e => near(e.date, p.start)) : [];
+      const ang = fromFortune(p.sign);
+      const peak = ang === 9 ? '<span class="zr-peak" title="10th from Fortune: peak">★</span>' : ang % 3 === 0 ? '<span class="zr-ang" title="Angular to Fortune">●</span>' : '';
+      const notes = [
+        ...(pds.length ? [`<div class="kd-pd-note">Primary direction also: ${pds.map(r => `${pdLabel(r)} (${fmtD(r.date)})`).join('; ')}</div>`] : []),
+        ...(kds.length ? [`<div class="zr-kd-note">Key date also: ${kds.map(e => `${e.label} (${fmtD(e.date)})`).join('; ')}</div>`] : []),
+      ].join('');
+      const cur = p.start <= now && now < p.end;
+      return `<tr data-level="${level}" data-i="${i}" class="${p === selected ? 'yv-now' : ''}${pds.length ? ' kd-pd' : ''}">
+        <td>${signName(p.sign)} ${peak}${p.loosing ? ' <span class="zr-lb" title="Loosing of the bond">LB</span>' : ''}${cur ? ' <span class="zr-cur">now</span>' : ''}${notes}</td>
+        <td class="yv-date">${fmtD(p.start)}</td><td class="yv-date">${fmtD(p.end)}</td></tr>`;
+    }).join('');
+    return `<table class="zr-table"><thead><tr><th>Level ${level}</th><th class="yv-date">From</th><th class="yv-date">To</th></tr></thead><tbody>${rows}</tbody></table>`;
+  };
+
+  yearTitleEl.textContent = 'Zodiacal releasing';
+  yearBodyEl.innerHTML = `
+    <div class="yv-hit kd-nav">
+      <button type="button" class="ghost-btn zr-lot${zr.lot === 'spirit' ? ' zr-on' : ''}" data-lot="spirit">From Spirit</button>
+      <button type="button" class="ghost-btn zr-lot${zr.lot === 'fortune' ? ' zr-on' : ''}" data-lot="fortune">From Fortune</button>
+    </div>
+    <div class="yv-row"><span>Lots (${isDay ? 'day' : 'night'} chart)</span><span>Fortune ${formatEclipticDegree(lots.fortune)} · Spirit ${formatEclipticDegree(lots.spirit)}${lots.spiritSign !== Math.floor(lots.spirit / 30) ? ` (released from ${ZODIAC_SIGNS[lots.spiritSign].name}: same sign as Fortune)` : ''}</span></div>
+    <div class="zr-label">Level 1 — chapters of life (years)</div>${table(l1s, 1, l1, null)}
+    <div class="zr-label">Level 2 — ${signName(l1.sign)} ${fmtD(l1.start)} → ${fmtD(l1.end)} (months)</div>${table(l2s, 2, l2, kdL2)}
+    <div class="zr-label">Level 3 — ${signName(l2.sign)} ${fmtD(l2.start)} → ${fmtD(l2.end)} (weeks)</div>${table(l3s, 3, null, kdL3)}
+    <div class="yv-note">Vettius Valens's zodiacal releasing, as Chris Brennan teaches it. Each sign rules for its minor years (Aries 15, Taurus 8, Gemini 20, Cancer 25, Leo 19, Virgo 20, Libra 8, Scorpio 15, Sagittarius 12, Capricorn 27, Aquarius 30, Pisces 12) in 360-day years; level 2 counts the same numbers in 30-day months, level 3 in 2.5-day units. Spirit is read for career and action, Fortune for body and circumstances. ★ the 10th sign from Fortune and ● its other angles (peak periods); LB the loosing of the bond (the sub-periods jump to the sign opposite). Highlighted: the selected period — click a level 1 or level 2 row to open its sub-periods. <span class="kd-pd-key">Red</span>: a natal primary direction within a day of the period's start; "Key date also": a Dykes key date of the solar year on that day.</div>`;
+  yearBodyEl.querySelectorAll('.zr-lot').forEach(b => b.addEventListener('click', () => { zr.lot = b.dataset.lot; zr.l1 = zr.l2 = null; openReleasing(); }));
+  yearBodyEl.querySelectorAll('tr[data-level="1"]').forEach(tr => tr.addEventListener('click', () => { zr.l1 = Number(tr.dataset.i); zr.l2 = null; openReleasing(); }));
+  yearBodyEl.querySelectorAll('tr[data-level="2"]').forEach(tr => tr.addEventListener('click', () => { zr.l2 = Number(tr.dataset.i); openReleasing(); }));
+  yearPanel.hidden = false;
+}
+document.getElementById('zr-toggle-btn').addEventListener('click', () => { zr.l1 = zr.l2 = null; openReleasing(); });
 
 document.getElementById('year-close-btn').addEventListener('click', () => { yearPanel.hidden = true; });
 

@@ -506,6 +506,21 @@ table; his worked sign-entry dates are reproduced within 1–2 days in
 also from any Year view. In the directions table a green ● marks the lord of the year
 (at the row's perfection date) where it is promissor or significator.
 
+## Zodiacal releasing (Valens)
+
+`zrSubperiods` / `hellenisticLots` in `astro.js`; sidebar "⟴ Zodiacal releasing". Released
+from the sign of the Lot of Spirit or Fortune (by sect: Fortune by day Asc + Moon − Sun, by
+night reversed; Spirit the opposite; Spirit moved on a sign if both share one). Minor years
+per sign (Ari 15, Tau 8, Gem 20, Can 25, Leo 19, Vir 20, Lib 8, Sco 15, Sag 12, Cap 27,
+Aqu 30, Pis 12) in 360-day years; L2 in 30-day months, L3 in 2.5-day units. Sub-periods
+start in the parent's sign; after twelve, the loosing of the bond jumps to the sign
+opposite the parent. Peaks: ★ 10th sign from Fortune, ● its other angles (both lots).
+Rows are flagged where a period starts within about a day of a natal primary direction
+(red) or of a Dykes key date (L2/L3). Checked against Louis's worked example (Cancer from
+2012-01-01 → Leo 2036-08-22; 13th sub-period Capricorn, LB). Note the app's Part of
+Fortune significator in the directions table is Ptolemy/Morin's unreversed form; for a
+day chart the two agree.
+
 ## Angles as promissors
 
 Morin used ASC/MC/IC/DSC (and house cusps) only as significators. Louis (*Primary

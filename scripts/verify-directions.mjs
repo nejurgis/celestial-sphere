@@ -222,6 +222,17 @@ for (const chart of DATASET) {
   }
 }
 
+// ── Zodiacal releasing: Louis's worked example ───────────────────────────────
+// A Cancer period from 2012-01-01 (25 × 360 days) gives way to Leo on
+// 2036-08-22; its 13th level-2 sub-period is Capricorn (loosing of the bond).
+{
+  const l1 = A.zrSubperiods({ sign: 3, start: new Date(Date.UTC(2012, 0, 1)), end: new Date(Date.UTC(2100, 0, 1)) }, 1);
+  const l2 = A.zrSubperiods(l1[0], 2);
+  const ok = l1[1].sign === 4 && l1[1].start.toISOString().slice(0, 10) === '2036-08-22' && l2[12].sign === 9 && l2[12].loosing && !l2[11].loosing;
+  if (!ok) worst = Infinity;
+  console.log(`\nZodiacal releasing (Louis): Leo from ${l1[1].start.toISOString().slice(0, 10)} (book 2036-08-22), 13th sub-period ${A.ZODIAC_SIGNS[l2[12].sign].name}${l2[12].loosing ? ' (LB)' : ''}  ${ok ? 'ok' : 'FAIL'}`);
+}
+
 // ── Morin/Holden worked example (Astrologia Gallica Book 22, Appendix 5) ──────
 // Direction of Mars to the conjunction of Jupiter in mundo, chart of Sixtus ab
 // Hemminga: RAMC 165°24′, latitude 53°N. Published: pole 47°21′, arc 25°46′

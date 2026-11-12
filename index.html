@@ -347,6 +347,15 @@
       #year-body .kd-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
       #year-body .kd-nav > span, #year-body .kd-nav label { white-space: nowrap; }
       #year-body .kd-only { margin-left: auto; font-size: 0.8rem; color: #666; display: flex; align-items: center; gap: 4px; }
+      #year-body .zr-label { margin: 12px 0 2px; font-weight: 700; font-size: 0.85rem; }
+      #year-body .zr-table tbody tr[data-level="1"], #year-body .zr-table tbody tr[data-level="2"] { cursor: pointer; }
+      #year-body .zr-peak { color: #b8860b; }
+      #year-body .zr-ang { color: #2f7d4f; font-size: 0.8em; }
+      #year-body .zr-lb { font-size: 0.72em; padding: 0 4px; border: 1px solid #999; border-radius: 4px; color: #666; }
+      #year-body .zr-cur { font-size: 0.72em; padding: 0 4px; border-radius: 4px; background: #2f6fb0; color: #fff; }
+      #year-body .zr-kd-note { font-size: 0.85em; color: #6b5aa8; font-weight: 600; margin-top: 2px; }
+      #year-body tr.kd-pd td .zr-kd-note { color: #6b5aa8; }
+      #year-body button.zr-lot.zr-on { background: #2f6fb0 !important; color: #fff !important; border-color: #2f6fb0 !important; }
       #year-body .kd-exp { font-size: 0.8rem; color: #666; display: flex; align-items: center; gap: 4px; }
       #year-body tr.kd-ext td { color: #8a8a8a; font-size: 0.92em; }
       #year-body tr.kd-ext-sign td { color: #555; font-weight: 600; }
@@ -491,6 +500,7 @@
         <button id="table-toggle-btn" type="button" class="primary-directions-only" title="List every direction (all promissors, all significators, all aspects) chronologically">☰ Directions table</button>
         <button id="closest-toggle-btn" type="button" class="primary-directions-only" title="The directions nearest today's date: the last few that perfected and the next few coming">◎ Closest directions</button>
         <button id="keydates-toggle-btn" type="button" class="primary-directions-only" title="Benjamin Dykes's key dates for the current solar year: the solar return Ascendant directed through the profected sign's whole-sign angles and to the lord of the year">🗝 Key dates of the year</button>
+        <button id="zr-toggle-btn" type="button" class="primary-directions-only" title="Zodiacal releasing from the Lot of Spirit or Fortune (Valens): chapters of life, with overlaps against primary directions and Dykes's key dates">⟴ Zodiacal releasing</button>
         <button id="chart2d-toggle-btn" type="button" title="Traditional 2D chart wheel">◐ 2D chart</button>
       </div>
 

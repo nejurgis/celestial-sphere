@@ -1388,7 +1388,7 @@ const DAY_MS = 86400000;
 
 // The k-th solar return: the moment the Sun is back at its natal longitude
 // (k = 0 is birth itself).
-function solarReturn(natalDate, k) {
+export function solarReturn(natalDate, k) {
   if (k <= 0) return natalDate;
   const natalSunLon = Astronomy.SunPosition(natalDate).elon;
   const start = new Date(natalDate.getTime() + (k * TROPICAL_YEAR_DAYS - 6) * DAY_MS);
@@ -1442,7 +1442,8 @@ export function computeYearView(natalDate, latitude, longitude, targetDate, nata
 
   return {
     ageYears, completedYears: k, sr, nextSr,
-    keyDates: k > 0 ? computeKeyDates(natalDate, sr, nextSr, latitude, longitude, profectedSign) : null,
+    // The first year (k = 0) runs from birth itself, the natal chart standing as its return.
+    keyDates: computeKeyDates(natalDate, sr, nextSr, latitude, longitude, profectedSign),
     // Directions inside the solar return chart (360° = this solar year).
     returnDirections: k > 0 ? computeReturnDirections(sr, nextSr, latitude, longitude).rows : [],
     srAsc: srSky?.asc?.deg ?? null, srMc: srSky?.mc?.deg ?? null,
@@ -1568,4 +1569,66 @@ export function computeKeyDates(natalDate, sr, nextSr, latitude, longitude, prof
   }
 
   return { srAsc, yearDays, keySigns, profectedSign, lord, chapters, hits, transits, boundaries, conjunctions, sr, nextSr };
+}
+
+// Key-date rows (Dykes) of every solar year overlapping [from, to]: used to flag
+// other techniques' dates that fall on one. Returns [{ date, label }].
+export function keyDateEvents(natalDate, latitude, longitude, natalAscDeg, from, to) {
+  const out = [];
+  const ascSign = Math.floor((((natalAscDeg % 360) + 360) % 360) / 30);
+  let k = Math.max(1, Math.floor((from - natalDate) / (TROPICAL_YEAR_DAYS * DAY_MS)));
+  while (k > 1 && solarReturn(natalDate, k) > from) k--;
+  for (; ; k++) {
+    const sr = solarReturn(natalDate, k);
+    if (sr > to) break;
+    const nextSr = solarReturn(natalDate, k + 1);
+    if (nextSr < from) continue;
+    const kd = computeKeyDates(natalDate, sr, nextSr, latitude, longitude, (ascSign + k) % 12);
+    for (const c of kd.chapters) out.push({ date: c.start, label: `return ASC enters the ${c.role === 'profection' ? 'sign of the year' : 'chapter'} ${ZODIAC_SIGNS[c.sign].name}` });
+    for (const h of kd.hits) out.push({ date: h.date, label: `return ASC ${h.glyph} ${h.from} ${kd.lord}` });
+    for (const t of kd.transits) out.push({ date: t.date, label: `${kd.lord} ${t.event === 'in' ? 'in' : t.event} ${ZODIAC_SIGNS[t.sign].name}` });
+  }
+  return out;
+}
+
+// ── Zodiacal releasing (Vettius Valens, Anthology IV) ─────────────────────────
+// Periods are released from the sign of a lot, sign by sign in zodiacal order,
+// each sign for its minor years: Aries 15, Taurus 8, Gemini 20, Cancer 25,
+// Leo 19, Virgo 20, Libra 8, Scorpio 15, Sagittarius 12, Capricorn 27,
+// Aquarius 30, Pisces 12. Valens counts 360-day years, so the units are
+//   L1 = 360 days, L2 = 30 days, L3 = 2.5 days, L4 = 5 hours.
+// A sub-period starts in its parent's sign and runs in order; if all twelve
+// have passed and the parent is not over, it jumps to the sign opposite the
+// parent's ("loosing of the bond") and continues from there. Sub-periods are
+// cut at the parent's end. Following Brennan (Hellenistic Astrology, 2017).
+export const ZR_YEARS = [15, 8, 20, 25, 19, 20, 8, 15, 12, 27, 30, 12];
+export const ZR_UNIT_DAYS = [360, 30, 2.5, 5 / 24];
+
+// Lots by sect (day: Sun above the horizon). Fortune by day Asc + Moon − Sun,
+// by night Asc + Sun − Moon; Spirit the reverse. If both fall in one sign,
+// Spirit is moved on one sign (Brennan's rule for releasing).
+export function hellenisticLots(ascDeg, sunDeg, moonDeg, isDay) {
+  const norm = d => ((d % 360) + 360) % 360;
+  const fortune = norm(isDay ? ascDeg + moonDeg - sunDeg : ascDeg + sunDeg - moonDeg);
+  const spirit = norm(isDay ? ascDeg + sunDeg - moonDeg : ascDeg + moonDeg - sunDeg);
+  const fortuneSign = Math.floor(fortune / 30);
+  let spiritSign = Math.floor(spirit / 30);
+  if (spiritSign === fortuneSign) spiritSign = (spiritSign + 1) % 12;
+  return { fortune, spirit, fortuneSign, spiritSign };
+}
+
+// Sub-periods of one period. parent: { sign, start, end } (Dates); level: 1..4.
+// For level 1 pass parent = { sign: lotSign, start: birth, end: lastDate }.
+export function zrSubperiods(parent, level) {
+  const unit = ZR_UNIT_DAYS[level - 1] * DAY_MS;
+  const out = [];
+  let sign = parent.sign, t = parent.start.getTime(), count = 0, lb = false;
+  const end = parent.end.getTime();
+  while (t < end) {
+    const len = ZR_YEARS[sign] * unit;
+    out.push({ level, sign, start: new Date(t), end: new Date(Math.min(t + len, end)), loosing: lb });
+    t += len; count++; lb = false;
+    if (level > 1 && count === 12) { sign = (parent.sign + 6) % 12; lb = true; } else sign = (sign + 1) % 12;
+  }
+  return out;
 }
